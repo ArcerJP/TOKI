@@ -5,7 +5,7 @@
   let {people,dates,availability} = window.TOKI_DATA;
   const shared=window.TokiShared;
   const M=window.TokiModel,A=window.TokiAvailability,S=window.TokiSchedule;
-  let rowDrag=null,googleImportUI=null,pendingLocalBoard=null;
+  let rowDrag=null,googleImportUI=null,meetingMenu=null,pendingLocalBoard=null;
   let groups=[],ready=!shared.enabled,busy=false,revision=null,pendingBoard=null;
   $("schedule-app").hidden=shared.enabled;
   $("auth-gate").hidden=!shared.enabled;
@@ -51,6 +51,7 @@
     $("chart").querySelectorAll('.row-drag-handle,.bottom-add').forEach(button=>button.disabled=disabled);
     if(ready&&shared.enabled&&!shared.online&&!busy)$("save-status").textContent='オフライン・閲覧のみ';
     googleImportUI?.refresh();
+    meetingMenu?.refresh();
   }
   function connectionState({online,fetchedAt}){
     if(!online){cancelDrag();rowDrag?.cancel();}
@@ -75,12 +76,12 @@
     if(board.version<=revision)return;
     const payload=board.payload;
     if(!M.valid(payload)){$("auth-message").textContent="共有データの形式を確認できません。再読み込みしてください。";$("auth-retry").hidden=false;return;}
-    if(busy||drag||rowDrag?.active||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
+    if(busy||drag||meetingMenu?.pressing||rowDrag?.active||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
     const changed=revision!==null;assign(payload);revision=board.version;undo=[];redo=[];ready=true;
     $("auth-gate").hidden=true;$("schedule-app").hidden=false;$("save-status").textContent="共有保存済み";render();if(changed)toast("他のメンバーの変更を反映しました");
   }
   function applyPending(){
-    if(busy||drag||rowDrag?.active||dialogOpen())return;
+    if(busy||drag||meetingMenu?.pressing||rowDrag?.active||dialogOpen())return;
     if(pendingBoard){const board=pendingBoard;pendingBoard=null;receiveBoard(board);}
     if(pendingLocalBoard){assign(pendingLocalBoard);pendingLocalBoard=null;undo=[];redo=[];render();toast('別タブの変更を反映しました');}
   }
@@ -121,7 +122,8 @@
         bar.style.left=((event.start-START)/SPAN*100)+'%';bar.style.width=((event.end-event.start)/SPAN*100)+'%';if(lane)bar.style.top=(5+lane*33)+'px';
         const title=event.kind==='meeting'?(group?event.members.map(p=>people[p]).join('，')+' MTG':groups.find(g=>g.id===event.group)?.name+' MTG'):'可能時間';
         bar.append(el('span','event-title',title),el('span','event-time',time(event.start)+'–'+time(event.end)));
-        bar.title=name+' / '+title+' '+time(event.start)+'〜'+time(event.end);bar.setAttribute('aria-label',name+' '+title+' '+time(event.start)+'から'+time(event.end));
+        bar.title=name+' / '+title+' '+time(event.start)+'〜'+time(event.end)+(event.kind==='meeting'?' ／ 長押しで操作':'');bar.setAttribute('aria-label',name+' '+title+' '+time(event.start)+'から'+time(event.end));
+        if(interactive&&event.kind==='meeting'){bar.setAttribute('aria-haspopup','dialog');bar.setAttribute('aria-controls','meeting-menu');}
         if(interactive){
           if(event.kind!=='meeting'||group)['start','end'].forEach(side=>{const handle=el('span','resize-handle '+side);handle.dataset.resize=side;handle.setAttribute('aria-hidden','true');bar.append(handle);});
           bar.addEventListener('click',e=>{if(suppressClick){e.preventDefault();return;}if(event.kind==='meeting'&&group)openMeeting(event.id);});
@@ -277,6 +279,7 @@
   document.addEventListener("keydown",event=>{
     if(event.key==="Escape"&&fullscreen&&!dialogOpen()&&!drag&&!rowDrag?.active&&!fullscreenPending){event.preventDefault();exitScheduleFullscreen();}
   },true);
+  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:editable,onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),notify:toast,settled:applyPending});
   rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
   window.TokiAvailabilityUI({board:snapshot,selected:()=>selected,excluded,notify:toast,canOpen:()=>ready&&!drag&&!rowDrag?.active});
   googleImportUI=window.TokiGoogleImportUI({

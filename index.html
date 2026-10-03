@@ -21,6 +21,7 @@
   <script src="availability.js" defer></script>
   <script src="schedule.js" defer></script>
   <script src="availability-ui.js" defer></script>
+  <script src="meeting-menu.js" defer></script>
   <script src="row-drag.js" defer></script>
   <script src="calendar-import.js" defer></script>
   <script src="google-calendar.js" defer></script>
@@ -72,10 +73,17 @@
       <li>グループの可能時間上をクリックすると30分、ドラッグすると選択範囲が対象者のMTGになります。可能時間からはみ出した範囲は登録できません。</li>
       <li>グループの可能時間の両端を縮める操作でも、減らした部分がMTGになります。可能時間の追加・移動はできません。</li>
       <li>MTGを縮めると、その部分が対象者の可能時間に戻ります。MTGをクリックし、✖で一人ずつ解除もできます。</li>
+      <li>MTG帯を長押しすると操作メニューが開きます。グループの「削除」は対象者全員、個人の「削除」はその人だけの可能時間を復元します。グループでは「時間をコピー」も使えます。</li>
       <li>MTGと重なる個人の可能時間は追加できません。Google取込でもMTGを保持します。</li>
       <li>「アプリをインストール」またはブラウザーのメニューから、TOKIを端末に追加できます。iPhone・iPadでは共有メニューの「ホーム画面に追加」を使います。</li>
       <li>オフラインでは最後に取得した共有予定を閲覧できます。編集は接続が戻ってから行ってください。</li>
     </ul>
+  </dialog>
+  <dialog id="meeting-menu" aria-labelledby="meeting-menu-title" aria-describedby="meeting-menu-scope">
+    <div class="dialog-heading"><h2 id="meeting-menu-title">MTGの操作</h2><button id="close-meeting-menu" class="icon-button" aria-label="MTGの操作を閉じる" autofocus>×</button></div>
+    <p id="meeting-menu-time"></p><p id="meeting-menu-scope"></p>
+    <button id="delete-meeting" class="danger">削除（可能時間を復元）</button><button id="copy-meeting-time">時間をコピー</button>
+    <textarea id="meeting-copy-fallback" aria-label="コピーするMTGの時間" rows="2" readonly hidden></textarea><p id="meeting-menu-error" class="error" role="alert"></p>
   </dialog>
   <dialog id="meeting-dialog" aria-labelledby="meeting-title">
     <div class="dialog-heading"><h2 id="meeting-title">MTG</h2><button id="close-meeting" class="icon-button" aria-label="MTGの対象者を閉じる">×</button></div>
