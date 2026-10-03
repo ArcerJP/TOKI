@@ -104,12 +104,22 @@
   function exportMeetings(board,groupIds,first,last){
     checkExportDates(first,last);
     if(!groupIds.length)throw Error('書き出すグループを選択してください。');
-    const groups=new Map(board.groups.map((group,order)=>[group.id,{...group,order}])),selected=new Set(groupIds);
+    const groups=new Map(board.groups.map(group=>[group.id,group])),selected=new Set(groupIds);
     if(groupIds.some(id=>!groups.has(id)))throw Error('グループが更新されています。画面を開き直してください。');
-    return board.meetings.filter(meeting=>selected.has(meeting.group)&&meeting.date>=first&&meeting.date<=last)
-      .sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start||groups.get(a.group).order-groups.get(b.group).order||a.end-b.end)
-      .map(meeting=>`${groups.get(meeting.group).name}（${meeting.members.map(person=>board.people[person]).join('、')}）：${A.formatDay(meeting.date,[meeting])}`)
-      .join('\n');
+    const meetings=board.meetings.filter(meeting=>selected.has(meeting.group)&&meeting.date>=first&&meeting.date<=last)
+      .sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start||a.end-b.end),byGroup=new Map();
+    for(const meeting of meetings){
+      if(!byGroup.has(meeting.group))byGroup.set(meeting.group,new Map());
+      const participants=byGroup.get(meeting.group),key=[...meeting.members].sort((a,b)=>a-b).join(',');
+      if(!participants.has(key))participants.set(key,{members:meeting.members,days:new Map()});
+      const {days}=participants.get(key);
+      if(!days.has(meeting.date))days.set(meeting.date,[]);
+      days.get(meeting.date).push(`${A.time(meeting.start)}～${A.time(meeting.end)}`);
+    }
+    return board.groups.filter(group=>byGroup.has(group.id)).map(group=>[...byGroup.get(group.id).values()].map(({members,days})=>[
+      `${group.name}（${members.map(person=>board.people[person]).join('、')}）：`,
+      ...[...days].map(([date,times])=>A.formatDay(date,[])+times.join(', '))
+    ].join('\n')).join('\n')).join('\n\n');
   }
   function color(group,groups=[]){
     // The ID makes a group's colour stable through renaming, reordering and reloads.

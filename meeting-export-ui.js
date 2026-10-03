@@ -6,9 +6,11 @@ window.TokiMeetingExportUI=({board,selected,notify,canOpen})=>{
     const inputs=choices(),ids=inputs.filter(input=>input.checked).map(input=>input.value);
     all.checked=inputs.length>0&&ids.length===inputs.length;all.indeterminate=ids.length>0&&ids.length<inputs.length;all.disabled=!inputs.length;
     try{
-      const text=window.TokiSchedule.exportMeetings(board(),ids,$('meeting-export-first').value,$('meeting-export-last').value);
+      const current=board(),first=$('meeting-export-first').value,last=$('meeting-export-last').value;
+      const text=window.TokiSchedule.exportMeetings(current,ids,first,last);
+      const count=current.meetings.filter(meeting=>ids.includes(meeting.group)&&meeting.date>=first&&meeting.date<=last).length;
       $('meeting-export-result').value=text;$('meeting-export-error').textContent='';$('copy-meetings').disabled=!text;
-      $('meeting-export-summary').textContent=text?`${ids.length}グループ・${text.split('\n').length}件のMTG`:'指定した期間・グループにMTGはありません。';
+      $('meeting-export-summary').textContent=text?`${ids.length}グループ・${count}件のMTG`:'指定した期間・グループにMTGはありません。';
     }catch(error){
       $('meeting-export-error').textContent=error.message;$('meeting-export-result').value='';$('meeting-export-summary').textContent='';$('copy-meetings').disabled=true;
     }
