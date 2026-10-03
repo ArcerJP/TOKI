@@ -1,0 +1,143 @@
+/* Isolated compact UI. Desktop rules remain in styles.css. */
+#mobile-app[hidden] { display: none !important; }
+#mobile-app { color: #193c34; background: #f3f7f5; min-height: 100dvh; font-size: 16px; line-height: 1.5; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+#mobile-app *, .mob-dialog * { box-sizing: border-box; }
+#mobile-app button, .mob-dialog button { min-height: 44px; min-width: 44px; border: 0; border-radius: 10px; padding: 8px 12px; color: #245c4b; background: transparent; font: inherit; font-weight: 600; cursor: pointer; touch-action: manipulation; white-space: normal; }
+#mobile-app button:disabled, .mob-dialog button:disabled { opacity: .4; cursor: default; }
+#mobile-app button:focus-visible, .mob-dialog button:focus-visible { outline: 3px solid #398b75; outline-offset: 2px; }
+#mobile-app h1 { font-size: 22px; margin: 6px 0 16px; }
+#mobile-app h2 { font-size: 17px; margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+#mobile-app h3 { font-size: 14px; margin: 0; overflow-wrap: anywhere; }
+#mobile-app p { margin: 6px 0; }
+#mobile-app .mob-header { position: sticky; top: 0; z-index: 8; padding: calc(8px + env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 8px max(12px,env(safe-area-inset-left)); background: #fff; border-bottom: 1px solid #dbe7e1; }
+#mobile-app .mob-brand { display: flex; align-items: center; gap: 12px; min-height: 28px; }
+#mobile-app .mob-brand strong { font-size: 19px; letter-spacing: .08em; }
+#mobile-app .mob-status { font-size: 11px; color: #587268; margin-left: auto; text-align: right; }
+#mobile-app .mob-datebar { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center; }
+#mobile-app .mob-datebar button:nth-child(2) { font-size: 16px; white-space: nowrap; padding-inline: 2px; }
+#mobile-app .mob-datebar button:first-child, #mobile-app .mob-datebar button:last-child { font-size: 27px; }
+#mobile-app .mob-viewbar { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+#mobile-app .mob-viewbar > button { font-size: 12px; padding-inline: 8px; }
+#mobile-app .mob-segments { display: flex; padding: 3px; background: #eef3f0; border-radius: 12px; }
+#mobile-app .mob-segments button { padding: 6px 14px; }
+#mobile-app .mob-segments button[aria-pressed="true"] { background: white; box-shadow: 0 1px 4px #163b341c; }
+#mobile-app .mob-content { padding: 12px; max-width: 760px; margin: auto; }
+#mobile-app .mob-card { border: 1px solid #dde8e2; background: #fff; border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 2px 4px #25463804; }
+#mobile-app .mob-rowhead { display: flex; align-items: center; gap: 6px; }
+#mobile-app .mob-rowhead h2, #mobile-app .mob-rowhead h3 { flex: 1; min-width: 0; }
+#mobile-app .mob-text-button { font-size: 13px; margin-right: -8px; flex-shrink: 0; }
+#mobile-app .mob-caption { color: #64766e; font-size: 11px; }
+#mobile-app .mob-times { font-variant-numeric: tabular-nums; color: #285d49; overflow-wrap: anywhere; }
+#mobile-app .mob-common { background: #edf6f0; border-left: 3px solid #568a68; padding: 9px 10px; border-radius: 4px; }
+#mobile-app .mob-meeting { display: flex; gap: 4px; align-items: center; background: #f6f4fa; border-left: 3px solid var(--meeting-color); padding: 5px 3px 5px 10px; margin: 8px 0; border-radius: 4px 10px 10px 4px; }
+#mobile-app .mob-meeting > div { min-width: 0; flex: 1; }
+#mobile-app .mob-meeting strong { display: block; font-variant-numeric: tabular-nums; color: var(--meeting-color); }
+#mobile-app .mob-meeting span { display: block; font-size: 12px; overflow-wrap: anywhere; }
+#mobile-app .mob-more-button { font-size: 24px; flex-shrink: 0; }
+#mobile-app .mob-person { padding: 4px 0 8px; border-top: 1px solid #edf1ee; }
+#mobile-app .mob-person .mob-times { font-size: 13px; margin-top: 0; }
+#mobile-app .mob-range-action { font-size: 14px; font-weight: 400; padding: 6px 8px 6px 0; min-height: 44px; text-align: left; -webkit-user-select: none; user-select: none; touch-action: pan-y; }
+#mobile-app .mob-excluded { text-decoration: line-through; color: #7d817e; }
+#mobile-app .mob-tag { font-size: 10px; background: #efefec; border-radius: 4px; padding: 1px 4px; white-space: nowrap; }
+#mobile-app .mob-exclude { font-size: 11px; font-weight: 400; color: #6a786f; padding: 6px 0; }
+#mobile-app .mob-fold { text-align: left; width: 100%; font-size: 12px; padding-left: 0; }
+#mobile-app .mob-nav { display: grid; grid-template-columns: repeat(4,1fr); position: fixed; bottom: 0; left: 0; right: 0; padding: 4px max(8px,env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left)); z-index: 10; border-top: 1px solid #dbe7e1; background: #fff; }
+#mobile-app .mob-nav button { display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 11px; color: #748077; padding: 4px; }
+#mobile-app .mob-nav button[aria-current="page"] { color: #205d47; background: #edf5ef; }
+#mobile-app .mob-nav-icon { width: 24px; height: 24px; margin: 2px 0; }
+#mobile-app .mob-note, .mob-dialog .mob-note { color: #63766c; font-size: 12px; line-height: 1.7; }
+#mobile-app .mob-notice { color: #815914; font-size: 12px; background: #fff4d9; padding: 8px; border-radius: 6px; }
+#mobile-app .mob-muted { color: #607167; font-size: 13px; }
+#mobile-app .mob-empty { padding: 36px 12px; text-align: center; }
+#mobile-app .mob-actions, .mob-dialog .mob-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#mobile-app .mob-actions button, .mob-dialog .mob-actions button { background: #edf3ef; }
+#mobile-app .mob-member-setting { display: flex; align-items: center; gap: 2px; border-top: 1px solid #edf1ee; padding: 4px 0; }
+#mobile-app .mob-member-setting > span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+#mobile-app .mob-member-setting button { padding-inline: 8px; font-size: 12px; }
+#mobile-app .mob-action-card { width: 100%; display: grid; grid-template-columns: 1fr 24px; text-align: left; gap: 5px 8px; padding: 18px 16px; background: #fff; border: 1px solid #dde8e2; margin-bottom: 12px; border-radius: 14px; }
+#mobile-app .mob-action-card strong { font-size: 15px; }
+#mobile-app .mob-action-card .mob-muted { grid-column: 1; font-weight: 400; }
+#mobile-app .mob-action-card .mob-chevron { grid-column: 2; grid-row: 1 / 3; align-self: center; font-size: 24px; }
+#mobile-app .mob-card ul { padding-left: 20px; font-size: 13px; }
+#mobile-app .mob-card li { margin: 10px 0; }
+/* Comparison table has no editing gestures: both directions always scroll. */
+#mobile-app .mob-table-scroll { overflow: auto; max-height: calc(100dvh - 294px); border: 1px solid #dbe7e1; border-radius: 10px; background: #fff; touch-action: pan-x pan-y; }
+#mobile-app .mob-table { width: 1536px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 11px; }
+#mobile-app .mob-table thead { position: sticky; top: 0; z-index: 4; }
+#mobile-app .mob-table th { background: #f2f7f4; font-weight: 500; }
+#mobile-app .mob-table th:first-child { width: 128px; position: sticky; left: 0; z-index: 3; border-right: 1px solid #ceddd4; }
+#mobile-app .mob-table td, #mobile-app .mob-table th { padding: 0; border-bottom: 1px solid #e1eae4; }
+#mobile-app .mob-table thead tr:first-child th { height: 28px; }
+#mobile-app .mob-table thead tr:nth-child(2) th { height: 30px; }
+#mobile-app .mob-table tbody th button { width: 100%; text-align: left; padding: 8px; font-size: 12px; overflow-wrap: anywhere; }
+#mobile-app .mob-table-track { width: 1408px; position: relative; min-height: 48px; background: repeating-linear-gradient(to right,transparent 0,transparent 43px,#e7ece9 43px,#e7ece9 44px); }
+#mobile-app .mob-table-bar { position: absolute; top: 7px; height: 34px; background: #dfeee3; color: #23503e; border: 1px solid #c9decc; border-radius: 4px; font-size: 10px; line-height: 32px; overflow: hidden; white-space: nowrap; padding-left: 4px; pointer-events: none; }
+#mobile-app .mob-table-mtg { color: white; border: 0; }
+#mobile-app .mob-group-tr > th { background: #e5efe8; }
+#mobile-app.mob-full { position: fixed; inset: 0; z-index: 30; overflow: auto; padding-bottom: env(safe-area-inset-bottom); }
+#mobile-app.mob-full .mob-nav, #mobile-app.mob-full .mob-brand { display: none; }
+#mobile-app.mob-full .mob-table-scroll { max-height: calc(100dvh - 178px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+/* Shared forms retain their logic, with compact-only layout and touch targets. */
+html[data-ui="compact"] body { margin: 0; padding: 0; min-width: 0; }
+html[data-ui="compact"].mob-modal-open { overflow: hidden; }
+html[data-ui="compact"] #schedule-app { display: none !important; }
+html[data-ui="compact"] dialog { box-sizing: border-box; width: calc(100% - 16px); max-width: 620px; max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding: 18px; border: 1px solid #d9e4dc; border-radius: 18px; overflow-y: auto; overscroll-behavior-y: contain; }
+html[data-ui="compact"] dialog h2 { font-size: 18px; overflow-wrap: anywhere; }
+html[data-ui="compact"] dialog button { min-height: 44px; min-width: 44px; }
+html[data-ui="compact"] dialog input:not([type="checkbox"]), html[data-ui="compact"] dialog select, html[data-ui="compact"] dialog textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; min-height: 44px; font-size: 16px; }
+html[data-ui="compact"] dialog input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; }
+html[data-ui="compact"] dialog .form-grid { grid-template-columns: minmax(0,1fr); }
+html[data-ui="compact"] dialog .membership-option, html[data-ui="compact"] dialog .meeting-export-option, html[data-ui="compact"] dialog .meeting-export-all { min-height: 44px; padding-block: 10px; align-items: center; }
+html[data-ui="compact"] dialog .dialog-actions { flex-wrap: wrap; gap: 8px; }
+html[data-ui="compact"] dialog textarea { white-space: pre-wrap; overflow-wrap: anywhere; }
+html[data-ui="compact"] #export-dialog, html[data-ui="compact"] #meeting-export-dialog, html[data-ui="compact"] #google-import-dialog { width: 100%; max-width: 760px; height: 100dvh; max-height: 100dvh; margin: auto; border-radius: 0; padding-top: max(16px,env(safe-area-inset-top)); padding-bottom: max(16px,env(safe-area-inset-bottom)); }
+html[data-ui="compact"] #export-dialog .dialog-heading, html[data-ui="compact"] #meeting-export-dialog .dialog-heading, html[data-ui="compact"] #google-import-dialog .dialog-heading { position: sticky; top: -16px; background: white; padding: 8px 0; z-index: 2; }
+html[data-ui="compact"] #export-dialog .dialog-actions, html[data-ui="compact"] #meeting-export-dialog .dialog-actions { position: sticky; bottom: -16px; background: white; padding: 12px 0; z-index: 2; }
+html[data-ui="compact"] .toast { bottom: calc(84px + env(safe-area-inset-bottom)); max-width: calc(100vw - 32px); z-index: 100; }
+.mob-dialog { color: #193c34; }
+.mob-dialog .mob-dialog-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.mob-dialog h2 { margin: 0; font-size: 18px; }
+.mob-dialog .mob-dialog-head button { flex-shrink: 0; font-size: 13px; }
+.mob-dialog label { display: block; margin: 10px 0; font-size: 13px; }
+.mob-dialog .mob-checks label { display: flex; align-items: center; gap: 12px; min-height: 44px; border-bottom: 1px solid #edf1ee; margin: 0; padding: 10px 4px; overflow-wrap: anywhere; }
+.mob-dialog .mob-week { display: grid; grid-template-columns: 1fr; margin: 12px 0; }
+.mob-dialog .mob-week button { text-align: left; border-bottom: 1px solid #edf1ee; }
+.mob-dialog .mob-week button[aria-current="date"] { background: #e5f1e9; }
+.mob-dialog .mob-primary { color: #fff; background: #245d48; }
+.mob-dialog .mob-danger { color: #aa3a31; }
+html[data-ui="compact"] dialog.mob-editor { width: 100%; max-width: 760px; height: 100dvh; max-height: 100dvh; margin: auto; border-radius: 0; padding: max(8px,env(safe-area-inset-top)) 12px max(8px,env(safe-area-inset-bottom)); }
+.mob-editor[open] { display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.mob-editor .mob-dialog-head h2 { font-size: 15px; }
+.mob-editor > label { flex-shrink: 0; margin: 0; }
+.mob-editor select { margin-top: 2px; }
+.mob-editor .mob-editor-tools { flex-shrink: 0; max-height: 40dvh; overflow-y: auto; }
+.mob-editor .mob-time-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mob-editor .mob-time-control { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; text-align: center; }
+.mob-editor .mob-time-control > span { grid-column: 1 / 4; font-size: 11px; color: #65776d; }
+.mob-editor .mob-time-control button { padding-inline: 0; font-size: 12px; }
+.mob-editor .mob-time-output { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mob-editor .mob-editor-modes { display: flex; gap: 2px; overflow-x: auto; }
+.mob-editor .mob-editor-modes button { padding: 6px 8px; font-size: 11px; flex: 1 0 auto; }
+.mob-editor .mob-editor-modes button[aria-pressed="true"] { color: white; background: #316b54; }
+.mob-editor .mob-editor-extras { display: flex; flex-wrap: wrap; gap: 4px; }
+.mob-editor .mob-editor-extras button { font-size: 12px; padding-inline: 8px; }
+.mob-editor .mob-note { margin: 0; }
+.mob-editor .mob-preview-summary, .mob-editor .mob-error { font-size: 12px; margin: 2px 0; flex-shrink: 0; }
+.mob-editor .mob-error { color: #a5382d; }
+.mob-editor .mob-editor-scroll { flex: 1; min-height: 100px; overflow-y: auto; border: 1px solid #d6e3da; border-radius: 10px; overscroll-behavior-y: contain; touch-action: pan-y; }
+.mob-editor .mob-editor-track { height: 1552px; position: relative; user-select: none; -webkit-user-select: none; touch-action: pan-y; background: #fff; }
+.mob-editor .mob-editor-track:not([data-mode="scroll"]) { touch-action: none; }
+.mob-editor .mob-editor-tick { position: absolute; left: 0; right: 0; height: 48px; border-top: 1px solid #e9eeeb; font-size: 11px; color: #748279; padding: 4px; pointer-events: none; }
+.mob-editor .mob-editor-available { position: absolute; left: 58px; right: 12px; background: #e2f0e6; border-left: 3px solid #86ad90; padding: 4px 8px; font-size: 11px; overflow: hidden; pointer-events: none; }
+.mob-editor .mob-editor-existing { position: absolute; left: 58px; right: 12px; color: white; padding: 4px 8px; font-size: 11px; overflow: hidden; opacity: .85; pointer-events: none; }
+.mob-editor .mob-editor-preview { position: absolute; left: 62px; right: 16px; border: 2px solid #215942; border-radius: 6px; background: #f5fff160; pointer-events: none; }
+.mob-editor .mob-drag-handle { position: absolute; height: 44px; width: 60px; display: grid; place-items: center; background: #245d48; color: white; font-size: 12px; border-radius: 8px; pointer-events: auto; }
+.mob-editor .mob-drag-start { top: 0; left: 0; }
+.mob-editor .mob-drag-end { bottom: 0; right: 0; }
+.mob-editor [data-mode="scroll"] .mob-drag-handle { pointer-events: none; opacity: .5; }
+.mob-editor .mob-invalid { border-color: #b04839; background: #fff0ee80; }
+.mob-editor .mob-editor-actions { flex-shrink: 0; display: flex; justify-content: space-between; gap: 12px; padding-top: 4px; }
+.mob-editor .mob-editor-actions button { min-width: 100px; }
+.mob-editor .mob-discard { background: #fff4e6; border-radius: 8px; padding: 8px; flex-shrink: 0; font-size: 12px; }
+.mob-editor .mob-discard p { margin: 0; }
+@media print { #mobile-app, .mob-dialog { display: none !important; } }

@@ -5,8 +5,8 @@
   let {people,dates,availability} = window.TOKI_DATA;
   const shared=window.TokiShared;
   const M=window.TokiModel,A=window.TokiAvailability,S=window.TokiSchedule;
-  let rowDrag=null,googleImportUI=null,meetingMenu=null,pendingLocalBoard=null;
-  let groups=[],ready=!shared.enabled,busy=false,revision=null,pendingBoard=null;
+  let rowDrag=null,googleImportUI=null,meetingMenu=null,pendingLocalBoard=null,mobile=null;
+  let groups=[],ready=!shared.enabled,busy=false,revision=null,pendingBoard=null,lastSaveError='';
   $("schedule-app").hidden=shared.enabled;
   $("auth-gate").hidden=!shared.enabled;
   $("copy-link").hidden=!shared.enabled;
@@ -53,6 +53,7 @@
     if(ready&&shared.enabled&&!shared.online&&!busy)$("save-status").textContent='オフライン・閲覧のみ';
     googleImportUI?.refresh();
     meetingMenu?.refresh();
+    mobile?.refresh();
   }
   function connectionState({online,fetchedAt}){
     if(!online){cancelDrag();rowDrag?.cancel();}
@@ -62,13 +63,14 @@
     if(ready&&!busy&&!pendingBoard)$("save-status").textContent=online?'共有保存・同期中':'オフライン・閲覧のみ';
   }
   async function saveNext(next){
+    lastSaveError='';
     if(!editable())return false;
     if(Array.isArray(next))next={...snapshot(),events:next};
     if(!M.valid(next)){toast("入力内容を確認してください。");return false;}
     if(!shared.enabled){assign(next);persist();return true;}
     setBusy(true);$("save-status").textContent="共有先に保存中…";
     try{const saved=await shared.save(next,revision);assign(saved.payload);revision=saved.version;$("save-status").textContent="共有保存済み";return true;}
-    catch(error){$("save-status").textContent="未保存・最新の予定を確認してください";$("meeting-error").textContent=error.message;$("roster-error").textContent=error.message;toast(error.message);await shared.refresh();return false;}
+    catch(error){lastSaveError=error.message;$("save-status").textContent="未保存・最新の予定を確認してください";$("meeting-error").textContent=error.message;$("roster-error").textContent=error.message;toast(error.message);await shared.refresh();return false;}
     finally{setBusy(false);}
   }
   async function commit(next,message){const before=snapshot();if(!await saveNext(next))return false;undo.push(before);if(undo.length>80)undo.shift();redo=[];render();toast(message);applyPending();return true;}
@@ -215,7 +217,7 @@
   let printScope="current";
   $("print-button").onclick=()=>$("print-dialog").showModal();$("close-print").onclick=()=>$("print-dialog").close();
   $("print-form").onsubmit=e=>{e.preventDefault();printScope=$("print-scope").value;buildPrint(printScope);$("print-dialog").close();window.print();};window.addEventListener("beforeprint",()=>buildPrint(printScope));window.addEventListener("afterprint",()=>{printScope="current";});
-  window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===3&&M.valid(saved.board)){if($("google-import-dialog").open){pendingLocalBoard=saved.board;return;}if(dialogOpen()||drag||rowDrag?.active){toast("別タブで変更されています。この画面の編集を保存すると上書きされます。");return;}assign(saved.board);undo=[];redo=[];render();toast("別タブの変更を反映しました");}}catch{}});
+  window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===3&&M.valid(saved.board)){if($("google-import-dialog").open||mobile?.editing){pendingLocalBoard=saved.board;mobile?.refresh();return;}if(dialogOpen()||drag||rowDrag?.active){toast("別タブで変更されています。この画面の編集を保存すると上書きされます。");return;}assign(saved.board);undo=[];redo=[];render();toast("別タブの変更を反映しました");}}catch{}});
   document.querySelectorAll("dialog").forEach(dialog=>dialog.addEventListener("close",applyPending));
   let rosterKind,rosterId;
   function openRoster(kind,id){
@@ -301,6 +303,17 @@
       if(await commit(plan.board,'Googleカレンダーの空き時間を可能時間として反映しました')){selected=plan.range.first;render();return true;}
       return false;
     }
+  });
+  mobile=window.TokiMobileUI({
+    context:()=>({board:snapshot(),date:selected,ready,busy,writable:editable(),pending:Boolean(pendingBoard||pendingLocalBoard),fingerprint:JSON.stringify(snapshot())}),
+    interacting:()=>Boolean(drag||rowDrag?.active),
+    selectDate,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
+    commit:async(next,message,fingerprint)=>{
+      if(pendingBoard||pendingLocalBoard||JSON.stringify(snapshot())!==fingerprint)throw Error('予定表が更新されました。画面を閉じ、最新の予定から編集してください。');
+      if(!await commit(next,message))throw Error(lastSaveError||'保存できませんでした。接続と最新の予定を確認して、もう一度お試しください。');
+      return true;
+    },
+    notify:toast,settled:applyPending
   });
   window.addEventListener('online',()=>setBusy(busy));window.addEventListener('offline',()=>setBusy(busy));
   if(shared.enabled){

@@ -8,6 +8,7 @@ const assets = [
   'config.js', 'shared.js', 'pwa.js', 'manifest.webmanifest',
   'availability.js', 'schedule.js', 'availability-ui.js', 'meeting-menu.js', 'meeting-export-ui.js',
   'calendar-import.js', 'google-calendar.js', 'google-import-ui.js',
+  'mobile.css', 'mobile-model.js', 'mobile-ui.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png',
   'vendor/supabase.js', 'vendor/supabase.js.LEGAL.txt'
 ];
