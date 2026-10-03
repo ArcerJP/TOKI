@@ -25,6 +25,7 @@
     <script src="schedule.js" defer></script>
     <script src="availability-ui.js" defer></script>
     <script src="meeting-menu.js" defer></script>
+    <script src="meeting-export-ui.js" defer></script>
     <script src="row-drag.js" defer></script>
     <script src="calendar-import.js" defer></script>
     <script src="google-calendar.js" defer></script>
@@ -85,6 +86,7 @@
           ><button id="export-availability" class="primary">
             可能時間書き出し
           </button>
+          <button id="export-meetings" aria-haspopup="dialog" aria-controls="meeting-export-dialog">MTG一括書き出し</button>
         </div>
       </section>
       <div class="roster-toolbar">
@@ -198,6 +200,9 @@
           MTGと重なる個人の可能時間は追加できません。Google取込でもMTGを保持します。
         </li>
         <li>
+          「MTG一括書き出し」でグループと期間を選ぶと、MTGの対象者名と日時を1件ずつまとめてコピーできます。
+        </li>
+        <li>
           「アプリをインストール」またはブラウザーのメニューから、TOKIを端末に追加できます。iPhone・iPadでは共有メニューの「ホーム画面に追加」を使います。
         </li>
         <li>
@@ -285,6 +290,27 @@
         <span></span
         ><button id="copy-availability" class="primary">コピー</button>
       </div>
+    </dialog>
+    <dialog id="meeting-export-dialog" aria-labelledby="meeting-export-title">
+      <div class="dialog-heading">
+        <h2 id="meeting-export-title">MTG一括書き出し</h2>
+        <button id="close-meeting-export" class="icon-button" aria-label="MTG書き出し画面を閉じる">×</button>
+      </div>
+      <fieldset class="meeting-export-selection">
+        <legend>対象グループ</legend>
+        <label class="meeting-export-all"><input id="meeting-export-all" type="checkbox" checked />すべて選択</label>
+        <div id="meeting-export-groups"></div>
+      </fieldset>
+      <div class="form-grid">
+        <div><label for="meeting-export-first">開始日</label><input id="meeting-export-first" type="date" required /></div>
+        <div><label for="meeting-export-last">終了日</label><input id="meeting-export-last" type="date" required /></div>
+      </div>
+      <p class="import-help">開始日・終了日を含む最大366日。MTGに登録されている対象者名を表示します。MTGがない日・グループは省略します。</p>
+      <p id="meeting-export-summary" class="import-help" role="status"></p>
+      <label for="meeting-export-result">コピーする内容</label>
+      <textarea id="meeting-export-result" rows="6" readonly></textarea>
+      <p id="meeting-export-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><span></span><button id="copy-meetings" class="primary">コピー</button></div>
     </dialog>
     <dialog id="print-dialog">
       <form id="print-form">

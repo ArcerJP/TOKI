@@ -46,6 +46,7 @@
     $("roster-form").querySelector('button[type="submit"]').disabled=disabled;
     $("meeting-dialog").querySelectorAll('.release-member').forEach(button=>button.disabled=disabled);
     $("export-availability").disabled=!ready||(!people.length&&!groups.length);
+    $("export-meetings").disabled=!ready||!groups.length;
     $("google-import-button").disabled=disabled||!people.length||navigator.onLine===false;
     $("undo").disabled=disabled||!undo.length;$("redo").disabled=disabled||!redo.length;
     $("chart").querySelectorAll('.row-drag-handle,.bottom-add').forEach(button=>button.disabled=disabled);
@@ -290,6 +291,7 @@
   meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:editable,onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),removeAvailability:target=>commit(S.editPerson(snapshot(),target.person,target.date,[target],[]),'可能時間を削除しました'),notify:toast,settled:applyPending});
   rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
   window.TokiAvailabilityUI({board:snapshot,selected:()=>selected,excluded,notify:toast,canOpen:()=>ready&&!drag&&!rowDrag?.active});
+  window.TokiMeetingExportUI({board:snapshot,selected:()=>selected,notify:toast,canOpen:()=>ready&&!busy&&!drag&&!rowDrag?.active&&!dialogOpen()});
   googleImportUI=window.TokiGoogleImportUI({
     context:()=>({board:snapshot(),fingerprint:JSON.stringify(snapshot()),pending:Boolean(pendingBoard||pendingLocalBoard)}),
     selected:()=>selected,

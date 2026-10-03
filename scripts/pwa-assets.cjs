@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..');
 const assets = [
   'index.html', 'styles.css', 'app.js', 'model.js', 'row-drag.js', 'data.js',
   'config.js', 'shared.js', 'pwa.js', 'manifest.webmanifest',
-  'availability.js', 'schedule.js', 'availability-ui.js', 'meeting-menu.js',
+  'availability.js', 'schedule.js', 'availability-ui.js', 'meeting-menu.js', 'meeting-export-ui.js',
   'calendar-import.js', 'google-calendar.js', 'google-import-ui.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png',
   'vendor/supabase.js', 'vendor/supabase.js.LEGAL.txt'

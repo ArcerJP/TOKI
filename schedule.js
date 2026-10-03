@@ -89,14 +89,27 @@
     let next=M.clone(board);for(const m of next.meetings.filter(m=>m.group===group))next=release(next,m.id,{},makeId);
     next.groups=next.groups.filter(g=>g.id!==group);return check(next);
   }
-  function exportText(board,key,first,last,excluded=[]){
+  function checkExportDates(first,last){
     if(!M.validDate(first)||!M.validDate(last)||last<first)throw Error('開始日と終了日を確認してください。');
     if((Date.parse(last)-Date.parse(first))/86400000>=366)throw Error('一度に書き出せる期間は366日以内です。');
+  }
+  function exportText(board,key,first,last,excluded=[]){
+    checkExportDates(first,last);
     const lines=[];
     for(let date=first;date&&date<=last;date=M.shiftDate(date,1)){
       const values=ranges(board,key,date,excluded);lines.push(A.formatDay(date,values)+(values.length?'':'なし'));
     }
     return lines.join('\n');
+  }
+  function exportMeetings(board,groupIds,first,last){
+    checkExportDates(first,last);
+    if(!groupIds.length)throw Error('書き出すグループを選択してください。');
+    const groups=new Map(board.groups.map((group,order)=>[group.id,{...group,order}])),selected=new Set(groupIds);
+    if(groupIds.some(id=>!groups.has(id)))throw Error('グループが更新されています。画面を開き直してください。');
+    return board.meetings.filter(meeting=>selected.has(meeting.group)&&meeting.date>=first&&meeting.date<=last)
+      .sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start||groups.get(a.group).order-groups.get(b.group).order||a.end-b.end)
+      .map(meeting=>`${groups.get(meeting.group).name}（${meeting.members.map(person=>board.people[person]).join('、')}）：${A.formatDay(meeting.date,[meeting])}`)
+      .join('\n');
   }
   function color(group,groups=[]){
     // The ID makes a group's colour stable through renaming, reordering and reloads.
@@ -107,6 +120,6 @@
       if(key===group)return `hsl(${hue} 55% 35%)`;
     }
   }
-  const api={migrate,participants,personRanges,ranges,editPerson,movePersonRange,meetingSelection,reserve,release,meetingAvailability,meetingDragRange,adjustMeeting,removeGroup,exportText,color};
+  const api={migrate,participants,personRanges,ranges,editPerson,movePersonRange,meetingSelection,reserve,release,meetingAvailability,meetingDragRange,adjustMeeting,removeGroup,exportText,exportMeetings,color};
   if(node)module.exports=api;else window.TokiSchedule=api;
 })();
