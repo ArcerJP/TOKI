@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const S=require('../schedule.js'),A=require('../availability.js');
 const source=fs.readFileSync('meeting-menu.js','utf8');
-function environment({personal=false,online=true,copyFails=false}={}){
+function environment({personal=false,availability=false,online=true,copyFails=false}={}){
   const listeners=new Map();
   function element(){return {hidden:false,disabled:false,textContent:'',value:'',style:{},attrs:{},open:false,
     addEventListener(type,fn){const key=[...listeners.keys()].find(k=>k.owner===this&&k.type===type)||{owner:this,type};listeners.set(key,[...(listeners.get(key)||[]),fn]);},
@@ -12,14 +12,14 @@ function environment({personal=false,online=true,copyFails=false}={}){
   const root=element(),document=element(),window=element(),nodes=new Map();
   const $=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);};document.getElementById=$;
   let current=S.reserve({schemaVersion:4,people:['A','B'],groups:[{id:'g',name:'企画局',members:[0,1]}],events:[{id:'a',person:0,date:'2026-10-05',start:540,end:1080},{id:'b',person:1,date:'2026-10-05',start:540,end:1080}],meetings:[]},'g','2026-10-05',[{start:540,end:600}]);
-  const display={kind:'meeting',id:current.meetings[0].id,inGroup:!personal,row:personal?'p:0':'g:g'};
-  const bar=element();bar.closest=()=>bar;
+  const display=availability?{kind:'availability',person:0,row:'p:0',date:'2026-10-05',...S.personRanges(current,0,'2026-10-05')[0]}:{kind:'meeting',id:current.meetings[0].id,inGroup:!personal,row:personal?'p:0':'g:g'};
+  const bar=element();bar.closest=selector=>selector.includes(availability?'.event.availability':'.event.meeting')?bar:null;
   let now=0,nextTimer=0,opened=0;const timers=new Map(),copies=[],notifications=[],releases=[];
   const setTimeout=(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,at:now+ms});return id;},clearTimeout=id=>timers.delete(id);
   function tick(ms){now+=ms;for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}}
   Object.assign(window,{TokiAvailability:A,innerWidth:1000,innerHeight:700});
   vm.runInNewContext(source,{window,document,setTimeout,clearTimeout,navigator:{clipboard:{writeText:async text=>{if(copyFails)throw Error('Denied');copies.push(text);}}}});
-  const api=window.TokiMeetingMenu({root,resolve:()=>display,board:()=>current,canOpen:()=>!$('meeting-menu').open,canDelete:()=>online,onOpen:()=>opened++,release:async target=>{releases.push(target);current=S.release(current,target.id,target.person===null?{}:{person:target.person});return true;},notify:text=>notifications.push(text),settled:()=>{}});
+  const api=window.TokiMeetingMenu({root,resolve:()=>display,board:()=>current,canOpen:()=>!$('meeting-menu').open,canDelete:()=>online,onOpen:()=>opened++,release:async target=>{releases.push(target);current=S.release(current,target.id,target.person===null?{}:{person:target.person});return true;},removeAvailability:async target=>{releases.push(target);current=S.editPerson(current,target.person,target.date,[target],[]);return true;},notify:text=>notifications.push(text),settled:()=>{}});
   const down=()=>root.emit('pointerdown',{target:bar,button:0,isPrimary:true,pointerId:1,clientX:950,clientY:650});
   const up=()=>document.emit('pointerup',{pointerId:1});
   return {$,api,root,bar,document,window,down,up,tick,copies,notifications,releases,get opened(){return opened;},get board(){return current;}};
@@ -64,4 +64,39 @@ test('offline menus allow copying and closing but never release a meeting',async
 test('clipboard rejection keeps the text available for manual copying',async()=>{
   const e=environment({copyFails:true});e.down();e.tick(600);e.up();e.tick(0);await e.$('copy-meeting-time').onclick();
   assert.equal(e.$('meeting-copy-fallback').hidden,false);assert.equal(e.$('meeting-copy-fallback').value,'10月5日(月)：09:00～10:00');assert.equal(e.$('meeting-copy-fallback').selected,true);
+});
+
+test('availability short clicks and drags do not open a menu; a hold opens without deleting',()=>{
+  const e=environment({availability:true}),before=structuredClone(e.board);
+  e.down();e.tick(599);e.up();e.tick(1);assert.equal(e.opened,0);
+  e.down();e.document.emit('pointermove',{pointerId:1,clientX:956,clientY:650});e.tick(600);assert.equal(e.opened,0);e.up();
+  e.down();e.tick(600);e.up();assert.equal(e.opened,1);assert.equal(e.document.emit('click').prevented,true);
+  assert.equal(e.$('meeting-menu-title').textContent,'Aの可能時間');assert.equal(e.$('meeting-menu-time').textContent,'10月5日(月)：10:00～18:00');
+  assert.deepEqual(e.board,before);assert.equal(e.releases.length,0);
+});
+
+test('availability deletion removes only the pressed range and updates group common time without releasing MTG',async()=>{
+  const e=environment({availability:true}),before=structuredClone(e.board);
+  e.down();e.tick(600);e.up();e.tick(0);await e.$('delete-meeting').onclick();
+  assert.deepEqual(S.personRanges(e.board,0,'2026-10-05'),[]);
+  assert.deepEqual(S.personRanges(e.board,1,'2026-10-05'),S.personRanges(before,1,'2026-10-05'));
+  assert.deepEqual(S.ranges(e.board,'g:g','2026-10-05'),[]);assert.deepEqual(e.board.meetings,before.meetings);
+  assert.equal(e.$('meeting-menu').open,false);
+});
+
+test('offline availability cannot be deleted and keyboard context menus work',async()=>{
+  const e=environment({availability:true,online:false});
+  e.root.emit('keydown',{target:e.bar,key:'F10',shiftKey:true});assert.equal(e.opened,1);
+  assert.equal(e.$('delete-meeting').disabled,true);await e.$('delete-meeting').onclick();assert.equal(e.releases.length,0);
+  assert.equal(e.$('copy-meeting-time').hidden,false);await e.$('copy-meeting-time').onclick();assert.deepEqual(e.copies,['10月5日(月)：10:00～18:00']);
+});
+
+test('availability copy preserves the board and provides manual fallback when clipboard access fails',async()=>{
+  for(const copyFails of [false,true]){
+    const e=environment({availability:true,copyFails}),before=structuredClone(e.board);
+    e.root.emit('contextmenu',{target:e.bar,clientX:950,clientY:650});await e.$('copy-meeting-time').onclick();
+    if(copyFails){assert.equal(e.$('meeting-copy-fallback').hidden,false);assert.equal(e.$('meeting-copy-fallback').value,'10月5日(月)：10:00～18:00');}
+    else{assert.deepEqual(e.copies,['10月5日(月)：10:00～18:00']);assert.equal(e.notifications[0],'可能時間をコピーしました');}
+    assert.deepEqual(e.board,before);
+  }
 });

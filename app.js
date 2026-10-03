@@ -122,8 +122,8 @@
         bar.style.left=((event.start-START)/SPAN*100)+'%';bar.style.width=((event.end-event.start)/SPAN*100)+'%';if(lane)bar.style.top=(5+lane*33)+'px';
         const title=event.kind==='meeting'?(group?event.members.map(p=>people[p]).join('，')+' MTG':groups.find(g=>g.id===event.group)?.name+' MTG'):'可能時間';
         bar.append(el('span','event-title',title),el('span','event-time',time(event.start)+'–'+time(event.end)));
-        bar.title=name+' / '+title+' '+time(event.start)+'〜'+time(event.end)+(event.kind==='meeting'?' ／ 長押しで操作':'');bar.setAttribute('aria-label',name+' '+title+' '+time(event.start)+'から'+time(event.end));
-        if(interactive&&event.kind==='meeting'){bar.setAttribute('aria-haspopup','dialog');bar.setAttribute('aria-controls','meeting-menu');}
+        bar.title=name+' / '+title+' '+time(event.start)+'〜'+time(event.end)+(event.kind!=='common'?' ／ 長押しで操作':'');bar.setAttribute('aria-label',name+' '+title+' '+time(event.start)+'から'+time(event.end));
+        if(interactive&&event.kind!=='common'){bar.setAttribute('aria-haspopup','dialog');bar.setAttribute('aria-controls','meeting-menu');}
         if(interactive){
           if(event.kind!=='meeting'||group)['start','end'].forEach(side=>{const handle=el('span','resize-handle '+side);handle.dataset.resize=side;handle.setAttribute('aria-hidden','true');bar.append(handle);});
           bar.addEventListener('click',e=>{if(suppressClick){e.preventDefault();return;}if(event.kind==='meeting'&&group)openMeeting(event.id);});
@@ -287,7 +287,7 @@
   document.addEventListener("keydown",event=>{
     if(event.key==="Escape"&&fullscreen&&!dialogOpen()&&!drag&&!rowDrag?.active&&!fullscreenPending){event.preventDefault();exitScheduleFullscreen();}
   },true);
-  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:editable,onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),notify:toast,settled:applyPending});
+  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:editable,onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),removeAvailability:target=>commit(S.editPerson(snapshot(),target.person,target.date,[target],[]),'可能時間を削除しました'),notify:toast,settled:applyPending});
   rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
   window.TokiAvailabilityUI({board:snapshot,selected:()=>selected,excluded,notify:toast,canOpen:()=>ready&&!drag&&!rowDrag?.active});
   googleImportUI=window.TokiGoogleImportUI({
