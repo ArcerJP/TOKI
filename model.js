@@ -29,10 +29,9 @@
   function rows(board,collapsed=new Set()){const assigned=new Set(board.groups.flatMap(g=>g.members)),rows=[];board.groups.forEach(g=>{rows.push({key:`g:${g.id}`,name:g.name,group:g});if(!collapsed.has(g.id))g.members.forEach(person=>rows.push({key:`p:${person}`,name:board.people[person],person,nested:true,context:g.id}));});board.people.forEach((name,person)=>{if(!assigned.has(person))rows.push({key:`p:${person}`,name,person,context:null});});return rows;}
   // Reordering the people array must remap all event and membership references together.
   function reorderPeople(board,person,target=null,after=false){const b=clone(board);if(target===person)return b;const order=b.people.map((_,i)=>i).filter(i=>i!==person);const at=target===null?order.length:order.indexOf(target)+(after?1:0);order.splice(at,0,person);const positions=new Map(order.map((old,index)=>[old,index]));b.people=order.map(i=>b.people[i]);b.events=b.events.map(e=>e.person===undefined?e:{...e,person:positions.get(e.person)});b.groups.forEach(g=>g.members=g.members.map(i=>positions.get(i)));return checked(b);}
-  function placePerson(board,person,{group=null,target=null,after=false,source=null,move=false,removeOnly=false}={}){
+  function placePerson(board,person,{group=null,target=null,after=false,source=null,move=false}={}){
     if(!Number.isInteger(person)||person<0||person>=board.people.length||target!==null&&(!Number.isInteger(target)||target<0||target>=board.people.length))throw Error('移動する人が見つかりません。');
     const b=clone(board);
-    if(removeOnly){const from=b.groups.find(g=>g.id===source);if(!from)throw Error('元のグループが見つかりません。');from.members=from.members.filter(i=>i!==person);return checked(b);}
     if(group!==null){const to=b.groups.find(g=>g.id===group);if(!to)throw Error('移動先のグループが見つかりません。');
       if(target!==null&&!to.members.includes(target))throw Error('移動先の行が見つかりません。');
       if(move&&source&&source!==group){const from=b.groups.find(g=>g.id===source);if(from)from.members=from.members.filter(i=>i!==person);}
@@ -41,7 +40,10 @@
       if(target===null&&to.members.includes(person))return checked(b);
       to.members=to.members.filter(i=>i!==person);const at=target===null?to.members.length:to.members.indexOf(target)+(after?1:0);to.members.splice(at,0,person);return checked(b);
     }
-    b.groups.forEach(g=>g.members=g.members.filter(i=>i!==person));return reorderPeople(b,person,target,after);
+    if(source){const from=b.groups.find(g=>g.id===source);if(!from)throw Error('元のグループが見つかりません。');from.members=from.members.filter(i=>i!==person);}
+    // Other memberships keep their own row order. Only newly ungrouped people move here.
+    if(b.groups.some(g=>g.members.includes(person)))return checked(b);
+    return reorderPeople(b,person,target,after);
   }
   const api={clone,normalizeName,nameKey,rowKey,owner,moveEvent,upgrade,valid,setPerson,removePerson,setGroup,removeGroup,rows,reorderPeople,placePerson};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else window.TokiModel=api;

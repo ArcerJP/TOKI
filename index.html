@@ -31,7 +31,7 @@
       <div class="actions"><button id="undo" title="元に戻す（Ctrl+Z）" disabled>↶ 元に戻す</button><button id="redo" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button><button id="print-button">PDF出力</button><button id="add-button" class="primary">＋ 予定を追加</button></div>
     </section>
     <div class="roster-toolbar"><button id="add-person">＋ 人を追加</button><button id="add-group">＋ グループを追加</button><span>名前をクリックして編集・削除 ／ グループの矢印で折りたたみ</span></div>
-    <div class="row-drop-tools"><span id="row-drag-status" role="status">名前の左の ⋮⋮ をドラッグして移動</span><div id="drop-remove" class="row-drop-zone">元のグループから外す</div><div id="drop-ungrouped" class="row-drop-zone">未所属へ（全グループから外す）</div></div>
+    <div class="row-drag-help" id="row-drag-status" role="status">名前の左の ⋮⋮ をドラッグして移動／未所属の行や表の末尾へ置くと、その所属だけ解除</div>
     <div class="chart-caption"><span><i class="legend"></i>参加できる時間<span id="day-summary"></span></span><span>空き枠をドラッグで追加 · 予定をドラッグで移動 · 両端で時間変更</span></div>
     <div id="chart-scroll" class="chart-scroll" aria-label="みんなの予定表"><div id="chart" class="chart"></div></div>
     <footer><span>2026年10月3日 — 10月8日</span><span>30分刻みの目盛り／時刻は1分単位で入力可能 · 予定をクリックして編集</span></footer>
