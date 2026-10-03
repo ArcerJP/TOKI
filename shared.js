@@ -63,7 +63,7 @@
     window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   }
-  const save = (payload, version) => request("save_grouped", {p_payload:payload, p_version:version});
+  const save = (payload, version) => request("save_calendar", {p_payload:payload, p_version:version});
   const shareUrl = () => token ? `${config.siteUrl}#share=${token}` : config.siteUrl;
   window.TokiShared = {enabled, initialize, save, refresh, fetchBoard, shareUrl};
 })();

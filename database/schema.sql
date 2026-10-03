@@ -38,10 +38,9 @@ declare item jsonb; person_name jsonb; grp jsonb; member jsonb;
 begin
   if jsonb_typeof(new.payload) is distinct from 'object'
     or jsonb_typeof(new.payload->'people') is distinct from 'array'
-    or new.payload->'schemaVersion' is distinct from '2'::jsonb
+    or new.payload->'schemaVersion' is distinct from '3'::jsonb
     or jsonb_typeof(new.payload->'groups') is distinct from 'array'
-    or jsonb_typeof(new.payload->'events') is distinct from 'array'
-    or new.payload->'dates' is distinct from '["2026-10-03","2026-10-04","2026-10-05","2026-10-06","2026-10-07","2026-10-08"]'::jsonb then
+    or jsonb_typeof(new.payload->'events') is distinct from 'array' then
     raise exception 'Invalid schedule structure';
   end if;
   if jsonb_array_length(new.payload->'people') not between 0 and 100 or jsonb_array_length(new.payload->'groups') > 50 or jsonb_array_length(new.payload->'events') > 2000 then
@@ -75,7 +74,7 @@ begin
       or ((item ? 'person') and (jsonb_typeof(item->'person') is distinct from 'number' or (item->>'person') !~ '^[0-9]+$' or (item->>'person')::integer not between 0 and jsonb_array_length(new.payload->'people')-1))
       or ((item ? 'group') and (jsonb_typeof(item->'group') is distinct from 'string' or not exists(select 1 from jsonb_array_elements(new.payload->'groups') g where g->>'id'=item->>'group')))
       or jsonb_typeof(item->'date') is distinct from 'string'
-      or not (new.payload->'dates' @> jsonb_build_array(item->>'date'))
+      or (item->>'date') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
       or jsonb_typeof(item->'start') is distinct from 'number'
       or jsonb_typeof(item->'end') is distinct from 'number'
       or (item->>'start') !~ '^[0-9]+$' or (item->>'end') !~ '^[0-9]+$'
@@ -87,6 +86,10 @@ begin
       or length(item->>'detail') > 2000 then
       raise exception 'Invalid event';
     end if;
+    begin
+      if (item->>'date')::date not between date '0001-01-07' and date '9999-12-25' then raise exception 'INVALID'; end if;
+    exception when invalid_datetime_format or datetime_field_overflow then raise exception 'INVALID';
+    end;
   end loop;
   if (select count(*) <> count(distinct value->>'id') from jsonb_array_elements(new.payload->'events')) then
     raise exception 'Duplicate event IDs';
@@ -122,11 +125,11 @@ begin
   if p_token is null or p_token !~ '^[a-f0-9]{64}$' then raise exception 'LINK'; end if;
   select l.board_id into board_id from toki_private.share_links l where l.token_hash=sha256(convert_to(p_token,'UTF8'));
   if board_id is null then raise exception 'LINK'; end if;
-  if p_action in ('join','save') then raise exception 'UPDATE_REQUIRED'; end if;
-  if p_action='save_grouped' then
+  if p_action in ('join','save','save_grouped') then raise exception 'UPDATE_REQUIRED'; end if;
+  if p_action='save_calendar' then
     select * into board from public.toki_boards b where b.id=board_id for update;
     if p_version is distinct from board.version then raise exception 'CONFLICT'; end if;
-    if p_payload->'schemaVersion' is distinct from '2'::jsonb or p_payload->'dates' is distinct from board.payload->'dates' then raise exception 'INVALID'; end if;
+    if p_payload->'schemaVersion' is distinct from '3'::jsonb then raise exception 'INVALID'; end if;
     update public.toki_boards set payload=p_payload where id=board.id returning * into board;
   elsif p_action='read' then
     select * into board from public.toki_boards b where b.id=board_id;
@@ -148,7 +151,7 @@ $$;
 revoke all on function public.toki_share(text,text,uuid,text,jsonb,bigint) from public, anon, authenticated;
 grant execute on function public.toki_share(text,text,uuid,text,jsonb,bigint) to anon, authenticated;
 -- Preserve all existing schedules while upgrading their format once.
-update public.toki_boards set payload=payload || jsonb_build_object('schemaVersion',2,'groups',coalesce(payload->'groups','[]'::jsonb))
-  where payload->'schemaVersion' is distinct from '2'::jsonb;
+update public.toki_boards set payload=(payload - 'dates') || jsonb_build_object('schemaVersion',3,'groups',coalesce(payload->'groups','[]'::jsonb))
+  where payload->'schemaVersion' is distinct from '3'::jsonb;
 notify pgrst, 'reload schema';
 commit;
