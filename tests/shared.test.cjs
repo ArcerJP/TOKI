@@ -2,27 +2,42 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
+const crypto=require('node:crypto');
 const source=fs.readFileSync('shared.js','utf8');
-const board=()=>({payload:{people:Array.from({length:16},(_,i)=>`Member ${i+1}`),dates:[],events:[]},version:1});
-function environment(store={board:board()},authorized=true){
-  let authCallback,session=authorized?{user:{id:'member'}}:null,apiError=false;
-  const calls=[];const notifications=[];
-  const channel={on(){return this;},subscribe(callback){callback('SUBSCRIBED');return this;}};
-  const client={
-    auth:{async getSession(){return {data:{session},error:null};},onAuthStateChange(callback){authCallback=callback;},async signInWithPassword(){session={user:{id:'member'}};authCallback('SIGNED_IN',session);return {error:null};},async signOut(){session=null;authCallback('SIGNED_OUT',null);return {error:null};}},
-    channel:()=>channel,removeChannel:async()=>{},
-    from(table){let payload,version;calls.push(table);return {select(){return this;},update(next){payload=next.payload;return this;},eq(key,value){if(key==='version')version=value;return this;},async maybeSingle(){if(apiError)return {data:null,error:{message:'offline'}};if(!authorized)return {data:null,error:null};if(payload){if(version!==store.board.version)return {data:null,error:null};store.board={payload:structuredClone(payload),version:version+1};}return {data:structuredClone(store.board),error:null};}};}
-  };
-  const window={TOKI_CONFIG:{url:'https://example.supabase.co',publishableKey:'public-test',boardId:'october-2026'},TokiSupabase:{createClient:()=>client},addEventListener(){}};
+const token='a'.repeat(64);
+const board=()=>({payload:{people:['既存の人'],dates:[],events:[]},version:1});
+function environment(store={board:board(),registrations:new Map()},storage=new Map(),hash=`#share=${token}`){
+  let apiError=false;
+  const calls=[],notifications=[],participants=[];
+  const client={async rpc(name,args){
+    calls.push({name,args});
+    if(apiError)return {error:{message:'offline'}};
+    if(args.p_token!==token)return {error:{message:'LINK'}};
+    const key=args.p_registration;
+    if(args.p_action==='join'&&!store.registrations.has(key)){
+      if(store.board.payload.people.some(n=>n.toLowerCase()===args.p_name.toLowerCase()))return {error:{message:'NAME_TAKEN'}};
+      const person=store.board.payload.people.length;
+      store.board.payload.people.push(args.p_name);store.registrations.set(key,person);store.board.version++;
+    }
+    if(args.p_action==='save'){
+      if(args.p_version!==store.board.version)return {error:{message:'CONFLICT'}};
+      store.board={payload:structuredClone(args.p_payload),version:args.p_version+1};
+    }
+    return {data:{...structuredClone(store.board),person:store.registrations.get(key)??null}};
+  }};
+  const window={TOKI_CONFIG:{url:'https://example.supabase.co',publishableKey:'public-test',boardId:'october-2026',siteUrl:'https://example.test/'},TokiSupabase:{createClient:()=>client},addEventListener(){}};
   const document={hidden:false,createElement:()=>({}),head:{append:script=>queueMicrotask(()=>script.onload())},addEventListener(){}};
-  vm.runInNewContext(source,{window,document,location:{protocol:'https:',hostname:'example.github.io',search:''},URLSearchParams,setInterval:()=>0,setTimeout:fn=>{queueMicrotask(fn);return 0;}});
+  vm.runInNewContext(source,{window,document,location:{protocol:'https:',hostname:'example.github.io',search:'',hash},crypto,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},URLSearchParams,setInterval:()=>0});
   const adapter=window.TokiShared;
-  return {adapter,calls,notifications,async init(){await adapter.initialize({board:value=>notifications.push(value),auth:()=>{},error:value=>notifications.push(value)});},setFailure:()=>{apiError=true;}};
+  return {adapter,calls,notifications,participants,async init(){await adapter.initialize({board:value=>notifications.push(value),participant:value=>participants.push(value),error:value=>notifications.push(value)});},setFailure:()=>{apiError=true;}};
 }
-test('member loads current data and saves with an exact version',async()=>{const env=environment();await env.init();assert.equal(env.notifications[0].version,1);const saved=await env.adapter.save({events:[]},1);assert.equal(saved.version,2);});
-test('two devices cannot silently overwrite the same revision',async()=>{const store={board:board()},a=environment(store),b=environment(store);await a.init();await b.init();await a.adapter.save({events:[{title:'first change'}]},1);await assert.rejects(b.adapter.save({events:[{title:'stale change'}]},1),e=>e.code==='CONFLICT');assert.equal(store.board.payload.events[0].title,'first change');});
-test('anonymous session never reads or writes the board',async()=>{const env=environment(undefined,false);await env.init();assert.equal(env.calls.length,0);await assert.rejects(env.adapter.save({},1),e=>e.code==='AUTH');});
-test('signed-in nonmember receives no board',async()=>{const env=environment(undefined,false);await env.init();await env.adapter.signIn('member@example.test','not-a-real-password');await assert.rejects(env.adapter.fetchBoard(),e=>e.code==='MEMBER');});
-test('network failures never report a successful save',async()=>{const env=environment();await env.init();env.setFailure();await assert.rejects(env.adapter.save({},1),e=>e.code==='NETWORK');});
-test('signing out prevents further reads and writes',async()=>{const env=environment();await env.init();await env.adapter.signOut();await assert.rejects(env.adapter.fetchBoard(),e=>e.code==='AUTH');await assert.rejects(env.adapter.save({},1),e=>e.code==='AUTH');});
-test('public starter contains no initial personal names or schedules',()=>{const window={};vm.runInNewContext(fs.readFileSync('data.js','utf8'),{window,location:{protocol:'https:',hostname:'example.github.io'},document:{}});assert.equal(window.TOKI_DATA.people.length,16);assert.equal(window.TOKI_DATA.people[0],'メンバー1');assert.ok(window.TOKI_DATA.availability.flat().every(value=>value===''));});
+
+test('link visitor can join without account and edit the schedule',async()=>{const env=environment();await env.init();assert.equal(env.notifications.length,0);await env.adapter.join('新しい人');assert.equal(env.participants[0].person,1);const saved=await env.adapter.save({people:['既存の人','新しい人'],events:[]},2);assert.equal(saved.version,3);});
+test('duplicate name is rejected and does not reuse or append a row',async()=>{const env=environment();await env.init();await assert.rejects(env.adapter.join('  既存の人  '),e=>e.code==='NAME_TAKEN'&&e.message.includes('別の名前'));assert.equal((await env.adapter.fetchBoard()).payload.people.length,1);});
+test('registration resumes after reload and retry does not create another row',async()=>{const store={board:board(),registrations:new Map()},storage=new Map();const a=environment(store,storage);await a.init();await a.adapter.join('Alice');await a.adapter.join('Alice');const b=environment(store,storage,'');await b.init();assert.equal(b.participants[0].name,'Alice');assert.equal(store.board.payload.people.length,2);});
+test('different device entering an existing registered name is warned',async()=>{const store={board:board(),registrations:new Map()},a=environment(store),b=environment(store);await a.init();await b.init();await a.adapter.join('Alice');await assert.rejects(b.adapter.join('Ａｌｉｃｅ'),e=>e.code==='NAME_TAKEN');});
+test('two devices cannot silently overwrite the same revision',async()=>{const store={board:board(),registrations:new Map()},a=environment(store),b=environment(store);await a.init();await b.init();await a.adapter.save({people:['既存の人'],events:[{title:'first change'}]},1);await assert.rejects(b.adapter.save({people:['既存の人'],events:[{title:'stale change'}]},1),e=>e.code==='CONFLICT');assert.equal(store.board.payload.events[0].title,'first change');});
+test('missing link never makes an API request',async()=>{const env=environment(undefined,undefined,'');await assert.rejects(env.init(),e=>e.code==='LINK');assert.equal(env.calls.length,0);});
+test('wrong link is rejected by the backend',async()=>{const env=environment(undefined,undefined,`#share=${'b'.repeat(64)}`);await assert.rejects(env.init(),e=>e.code==='LINK');});
+test('network failure never reports success',async()=>{const env=environment();await env.init();env.setFailure();await assert.rejects(env.adapter.save({},1),e=>e.code==='NETWORK');});
+test('public starter contains no personal names or schedules',()=>{const window={};vm.runInNewContext(fs.readFileSync('data.js','utf8'),{window,location:{protocol:'https:',hostname:'example.github.io'},document:{}});assert.equal(window.TOKI_DATA.people.length,16);assert.equal(window.TOKI_DATA.people[0],'メンバー1');assert.ok(window.TOKI_DATA.availability.flat().every(value=>value===''));});

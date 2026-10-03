@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="referrer" content="no-referrer">
   <title>TOKI | みんなの予定</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c574b'/%3E%3Cpath d='M7 10h18M10 16h12M13 22h12' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
@@ -14,22 +15,22 @@
 </head>
 <body>
   <section id="auth-gate" class="auth-gate" hidden>
-    <div class="auth-card"><div class="brand"><span class="brand-icon" aria-hidden="true">▤</span><strong>TOKI</strong></div><h1>みんなの予定にログイン</h1><p>登録済みのメンバーだけが閲覧・編集できます。</p>
-      <form id="login-form"><label for="login-email">メールアドレス</label><input id="login-email" type="email" autocomplete="username" required><label for="login-password">パスワード</label><input id="login-password" type="password" autocomplete="current-password" required><button id="login-submit" type="submit" class="primary">ログイン</button></form>
-      <p id="auth-message" role="status"></p><div id="auth-signed-in" hidden><button id="auth-retry">再読み込み</button><button id="gate-logout">ログアウト</button></div>
+    <div class="auth-card"><div class="brand"><span class="brand-icon" aria-hidden="true">▤</span><strong>TOKI</strong></div><h1>名前を入力して参加</h1><p>あなたの行を予定表に追加します。共有URLを知っている人は、全員の予定を閲覧・編集できます。</p>
+      <form id="join-form" hidden><label for="join-name">予定表に表示する名前</label><input id="join-name" maxlength="40" autocomplete="nickname" placeholder="例：はる（名字）" aria-describedby="name-help auth-message" required><small id="name-help">登録済みの名前は使えません。区別できる名前にしてください。</small><button id="join-submit" type="submit" class="primary">参加する</button></form>
+      <p id="auth-message" role="status">共有の予定を確認中…</p><button id="auth-retry" hidden>再読み込み</button>
     </div>
   </section>
   <main class="app" id="schedule-app">
     <header class="topbar">
       <div class="brand"><span class="brand-icon" aria-hidden="true">▤</span><strong>TOKI</strong><span class="brand-divider"></span><h1>みんなの予定</h1></div>
-      <div class="account-tools"><span id="save-status" role="status">このブラウザーに保存</span><a id="shared-link" href="https://arcerjp.github.io/TOKI/" target="_blank" rel="noopener">共有版を開く</a><button id="logout" hidden>ログアウト</button></div>
+      <div class="account-tools"><span id="participant-name" hidden></span><span id="save-status" role="status">このブラウザーに保存</span><button id="copy-link" hidden>共有URLをコピー</button></div>
     </header>
     <section class="toolbar" aria-label="表示と編集">
       <div class="date-tools"><button id="previous" aria-label="前の日">‹</button><label class="sr-only" for="date-select">表示する日</label><select id="date-select"></select><button id="next" aria-label="次の日">›</button><span class="member-count">16人</span></div>
       <div class="actions"><button id="undo" title="元に戻す（Ctrl+Z）" disabled>↶ 元に戻す</button><button id="redo" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button><button id="print-button">PDF出力</button><button id="add-button" class="primary">＋ 予定を追加</button></div>
     </section>
     <div class="chart-caption"><span><i class="legend"></i>参加できる時間<span id="day-summary"></span></span><span>空き枠をドラッグで追加 · 予定をドラッグで移動 · 両端で時間変更</span></div>
-    <div id="chart-scroll" class="chart-scroll" aria-label="16人の予定表"><div id="chart" class="chart"></div></div>
+    <div id="chart-scroll" class="chart-scroll" aria-label="みんなの予定表"><div id="chart" class="chart"></div></div>
     <footer><span>2026年10月3日 — 10月8日</span><span>30分刻みの目盛り／時刻は1分単位で入力可能 · 予定をクリックして編集</span></footer>
     <p class="storage-note" id="storage-note">変更はこの端末の同じブラウザーに保存されます。ブラウザーの保存データを削除すると、編集内容も消えます。</p>
   </main>
@@ -46,6 +47,7 @@
   </dialog>
   <dialog id="print-dialog"><form id="print-form"><div class="dialog-heading"><h2>PDF出力</h2><button type="button" id="close-print" class="icon-button" aria-label="閉じる">×</button></div><label for="print-scope">出力する日にち</label><select id="print-scope"><option value="current">表示中の1日</option><option value="all">全6日（1日ごとに改ページ）</option></select><p class="print-help">印刷画面で「PDFに保存」を選択してください。A3・横向きが推奨です。</p><div class="dialog-actions"><span></span><button type="submit" class="primary">印刷画面を開く</button></div></form></dialog>
   <div id="toast" role="status" class="toast" hidden></div>
+  <dialog id="share-dialog"><div class="dialog-heading"><h2>共有URL</h2><button id="close-share" class="icon-button" aria-label="閉じる">×</button></div><label for="share-url">このURLを参加者に送ってください</label><input id="share-url" readonly><p>URLを知っている人は全員の予定を閲覧・編集できます。</p></dialog>
   <div id="print-area"></div>
 </body>
 </html>

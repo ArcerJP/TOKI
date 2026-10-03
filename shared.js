@@ -2,77 +2,82 @@
 (() => {
   const local = location.protocol === "file:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
   const enabled = !local || new URLSearchParams(location.search).get("mode") === "shared";
-  let client, session, channel, refreshTimer, authGeneration = 0;
   const config = window.TOKI_CONFIG;
   const hooks = {};
-  function emit(type, value) { hooks[type]?.(value); }
-  function error(message, code) { return Object.assign(new Error(message), {code}); }
-  async function fetchBoard() {
-    if (!session) throw error("ログインしてください。", "AUTH");
-    const {data, error: failure} = await client.from("toki_boards").select("payload,version").eq("id", config.boardId).maybeSingle();
-    if (failure) throw error("共有データを取得できません。接続を確認してください。", "NETWORK");
-    if (!data) throw error("このアカウントはメンバー未登録です。管理者に登録を依頼してください。", "MEMBER");
-    return data;
+  const storageKey = `toki-participant-v2:${config?.boardId}`;
+  let client, token, registration, participant = null, refreshing = false;
+  const emit = (type, value) => hooks[type]?.(value);
+  const error = (message, code) => Object.assign(new Error(message), {code});
+  const messages = {
+    LINK: "共有URLが無効です。招待された共有URLを開いてください。",
+    NAME_TAKEN: "その名前はすでに登録されています。苗字やニックネームなどを加え、別の名前にしてください。",
+    NAME_INVALID: "名前は空白以外の文字を使い、40文字以内で入力してください。",
+    LIMIT: "参加者が上限の100人に達しています。",
+    CONFLICT: "他の人が予定を変更したため保存しませんでした。最新の予定を確認して、もう一度編集してください。",
+    INVALID: "予定の形式が正しくありません。最新の予定を再取得してください。",
+    NETWORK: "通信を確認できませんでした。接続を確認して再度お試しください。"
+  };
+  function remember() {
+    try { localStorage.setItem(storageKey, JSON.stringify({token, registration})); }
+    catch { emit("warning", "このブラウザーでは名前を記憶できません。次回は別の名前で参加する必要があります。"); }
   }
-  async function subscribe() {
-    if (channel) { await client.removeChannel(channel); channel = null; }
-    if (!session) return;
-    channel = client.channel("toki-board")
-      .on("postgres_changes", {event:"UPDATE", schema:"public", table:"toki_boards", filter:`id=eq.${config.boardId}`}, () => refresh())
-      .subscribe(status => emit("connection", status === "SUBSCRIBED" ? "接続中" : "再接続中"));
+  async function request(action, extra = {}) {
+    if (!client || !token) throw error(messages.LINK, "LINK");
+    let result;
+    try { result = await client.rpc("toki_share", {p_token:token, p_registration:registration, p_action:action, ...extra}); }
+    catch { throw error(messages.NETWORK, "NETWORK"); }
+    if (result.error) {
+      const code = Object.hasOwn(messages, result.error.message) ? result.error.message : "NETWORK";
+      throw error(messages[code], code);
+    }
+    return result.data;
+  }
+  const fetchBoard = () => request("read");
+  function accept(board) {
+    const next = Number.isInteger(board.person) ? {person:board.person, name:board.payload.people[board.person]} : null;
+    if (participant?.person !== next?.person || participant?.name !== next?.name) { participant = next; emit("participant", next); }
+    if (participant) emit("board", board);
+    else emit("join", null);
   }
   async function refresh() {
-    if (!session) return;
-    const generation = authGeneration;
-    try { const board = await fetchBoard(); if (generation === authGeneration && session) emit("board", board); }
-    catch (failure) { if (generation === authGeneration) emit("error", failure); }
+    if (!token || refreshing) return;
+    refreshing = true;
+    try { accept(await fetchBoard()); emit("connection", "接続中"); }
+    catch (failure) { emit("error", failure); }
+    finally { refreshing = false; }
   }
   async function initialize(callbacks) {
     Object.assign(hooks, callbacks);
     if (!enabled) return;
     if (!config?.url || !config?.publishableKey) throw error("共有先が設定されていません。", "CONFIG");
-    // Bundled locally; no third-party script is fetched at login time.
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(storageKey)) || {}; } catch {}
+    const fragment = new URLSearchParams(location.hash.slice(1));
+    token = fragment.has("share") ? fragment.get("share") : stored.token;
+    if (!/^[a-f0-9]{64}$/.test(token || "")) throw error(messages.LINK, "LINK");
+    registration = stored.token === token && /^[a-f0-9-]{36}$/.test(stored.registration || "") ? stored.registration : crypto.randomUUID();
     await new Promise((resolve, reject) => {
       const script = document.createElement("script"); script.src = "vendor/supabase.js";
-      script.onload = resolve; script.onerror = () => reject(error("ログイン機能を読み込めません。再読み込みしてください。", "LOAD"));
+      script.onload = resolve; script.onerror = () => reject(error("共有機能を読み込めません。再読み込みしてください。", "LOAD"));
       document.head.append(script);
     });
-    client = window.TokiSupabase.createClient(config.url, config.publishableKey);
-    const initial = await client.auth.getSession();
-    if (initial.error) throw error("ログイン状態を確認できません。再読み込みしてください。", "AUTH");
-    session = initial.data.session;
-    emit("auth", session?.user ?? null);
-    client.auth.onAuthStateChange((event, next) => {
-      const previousUser = session?.user?.id; session = next;
-      if (previousUser !== next?.user?.id || event === "SIGNED_OUT") {
-        authGeneration++; emit("auth", next?.user ?? null);
-        setTimeout(() => { subscribe(); refresh(); }, 0);
-      }
-    });
-    await subscribe();
-    if (session) await refresh();
-    refreshTimer = setInterval(() => { if (!document.hidden) refresh(); }, 15000);
+    client = window.TokiSupabase.createClient(config.url, config.publishableKey, {auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}});
+    const board = await fetchBoard();
+    remember(); accept(board);
+    setInterval(() => { if (!document.hidden && participant) refresh(); }, 5000);
     window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   }
-  async function signIn(email, password) {
-    if (!client) throw error("ログイン機能を準備中です。少し待ってからお試しください。", "LOAD");
-    const {error: failure} = await client.auth.signInWithPassword({email, password});
-    if (failure) throw error("ログインできません。登録済みのメールアドレスとパスワードを確認してください。", "AUTH");
+  async function join(name) {
+    const normalized = name.normalize("NFKC").trim().replace(/\s+/gu, " ");
+    if (!normalized || normalized.length > 40) throw error(messages.NAME_INVALID, "NAME_INVALID");
+    // Save the registration ID before sending so a lost response can safely be retried.
+    remember();
+    const board = await request("join", {p_name:normalized});
+    accept(board);
+    return board;
   }
-  async function signOut() {
-    if (!client) return;
-    const {error: failure} = await client.auth.signOut({scope:"local"});
-    if (failure) throw error("ログアウトできませんでした。接続を確認して再度お試しください。", "AUTH");
-  }
-  async function save(payload, version) {
-    if (!session) throw error("ログインし直してください。", "AUTH");
-    const generation = authGeneration;
-    const {data, error: failure} = await client.from("toki_boards").update({payload}).eq("id", config.boardId).eq("version", version).select("payload,version").maybeSingle();
-    if (generation !== authGeneration || !session) throw error("ログイン状態が変わりました。ログインし直してください。", "AUTH");
-    if (failure) throw error("保存を確認できませんでした。最新の予定を再取得して確認してください。", "NETWORK");
-    if (!data) throw error("他の人が予定を変更したため保存しませんでした。最新の予定を確認して、もう一度編集してください。", "CONFLICT");
-    return data;
-  }
-  window.TokiShared = {enabled, initialize, signIn, signOut, save, refresh, fetchBoard};
+  const save = (payload, version) => request("save", {p_payload:payload, p_version:version});
+  const shareUrl = () => token ? `${config.siteUrl}#share=${token}` : config.siteUrl;
+  window.TokiShared = {enabled, initialize, join, save, refresh, fetchBoard, shareUrl};
 })();
