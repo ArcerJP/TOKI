@@ -15,5 +15,6 @@
 # Local dependencies and temporary files
 node_modules/
 tmp/
+site/
 .sites-runtime/
 *.log

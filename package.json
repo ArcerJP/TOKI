@@ -1,0 +1,16 @@
+{
+  "name": "toki-schedule",
+  "version": "1.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node serve.cjs",
+    "test": "node --test tests/*.test.cjs",
+    "build": "node scripts/build-vendor.cjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

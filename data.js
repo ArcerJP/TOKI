@@ -10,7 +10,7 @@ window.TOKI_DATA = {
 // Optional private data is loaded only on this device, never on a hosted site.
 window.TOKI_DATA_READY = new Promise(resolve => {
   const isLocal = location.protocol === "file:" || ["localhost","127.0.0.1","[::1]"].includes(location.hostname);
-  if (!isLocal) { resolve(); return; }
+  if (!isLocal || window.TokiShared?.enabled) { resolve(); return; }
   const script = document.createElement("script");
   script.src = "data.local.js";
   script.onload = () => resolve();
