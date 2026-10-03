@@ -30,13 +30,31 @@
       <div class="date-tools"><button id="previous-week" aria-label="前の週" title="前の週へ">≪</button><button id="previous" aria-label="前の日" title="前の日へ">‹</button><label class="sr-only" for="date-select">表示する日</label><select id="date-select"></select><button id="next" aria-label="次の日" title="次の日へ">›</button><button id="next-week" aria-label="次の週" title="次の週へ">≫</button><span class="member-count">16人</span></div>
       <div class="actions"><button id="undo" title="元に戻す（Ctrl+Z）" disabled>↶ 元に戻す</button><button id="redo" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button><button id="print-button">PDF出力</button><button id="add-button" class="primary">＋ 予定を追加</button></div>
     </section>
-    <div class="roster-toolbar"><button id="add-person">＋ 人を追加</button><button id="add-group">＋ グループを追加</button><span>名前をクリックして編集・削除 ／ グループの矢印で折りたたみ</span></div>
-    <div class="row-drag-help" id="row-drag-status" role="status">名前の左の ⋮⋮ をドラッグして移動／未所属の行や表の末尾へ置くと、その所属だけ解除</div>
-    <div class="chart-caption"><span><i class="legend"></i>参加できる時間<span id="day-summary"></span></span><span>空き枠をドラッグで追加 · 予定をドラッグで移動 · 両端で時間変更</span></div>
-    <div id="chart-scroll" class="chart-scroll" aria-label="みんなの予定表"><div id="chart" class="chart"></div></div>
+    <div class="roster-toolbar"><button id="add-person">＋ 人を追加</button><button id="add-group">＋ グループを追加</button><button id="hint-button" class="hint-button" aria-haspopup="dialog" aria-controls="hint-dialog">💡ヒント</button></div>
+    <div class="sr-only row-drag-status" id="row-drag-status" role="status"></div>
+    <div class="chart-caption"><span><i class="legend"></i>参加できる時間<span id="day-summary"></span></span></div>
+    <div class="chart-panel" id="chart-panel">
+      <button id="fullscreen-button" class="fullscreen-button" type="button" aria-label="スケジュールを全画面表示" aria-pressed="false" title="スケジュールを全画面表示">
+        <svg class="fullscreen-enter-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/></svg>
+        <svg class="fullscreen-exit-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h5V3m8 0v5h5M8 21v-5H3m18 0h-5v5"/></svg><span class="fullscreen-exit-label">全画面終了</span>
+      </button>
+      <div id="chart-scroll" class="chart-scroll" aria-label="みんなの予定表"><div id="chart" class="chart"></div></div>
+    </div>
     <footer><span id="week-range"></span><span>30分刻みの目盛り／時刻は1分単位で入力可能 · 予定をクリックして編集</span></footer>
     <p class="storage-note" id="storage-note">変更はこの端末の同じブラウザーに保存されます。ブラウザーの保存データを削除すると、編集内容も消えます。</p>
   </main>
+  <dialog id="hint-dialog" aria-labelledby="hint-title">
+    <div class="dialog-heading"><h2 id="hint-title">💡ヒント</h2><button type="button" class="icon-button" id="close-hint" aria-label="ヒントを閉じる">×</button></div>
+    <ul class="hint-list">
+      <li>名前をクリックすると、編集・削除できます。</li>
+      <li>グループ名の左の矢印で、折りたたみ・展開できます。</li>
+      <li>名前の左の「⋮⋮」をドラッグすると、人やグループを並べ替えられます。</li>
+      <li>人をグループへドラッグすると、所属を追加できます。</li>
+      <li>グループ内の人を未所属の行や表の末尾へドラッグすると、そのグループへの所属だけを解除します。</li>
+      <li>空き枠をドラッグすると、予定を追加できます。</li>
+      <li>予定をドラッグすると移動でき、両端をドラッグすると時間を変更できます。</li>
+    </ul>
+  </dialog>
   <dialog id="event-dialog">
     <form id="event-form">
       <div class="dialog-heading"><h2 id="dialog-title">予定を追加</h2><button type="button" class="icon-button" id="close-dialog" aria-label="閉じる">×</button></div>

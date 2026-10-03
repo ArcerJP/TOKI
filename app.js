@@ -154,6 +154,42 @@
     catch{$("share-url").value=shared.shareUrl();$("share-dialog").showModal();$("share-url").select();}
   };
   $("close-share").onclick=()=>$("share-dialog").close();
+  $("hint-button").onclick=()=>{if(!drag&&!rowDrag?.active)$("hint-dialog").showModal();};
+  $("close-hint").onclick=()=>$("hint-dialog").close();
+  const fullscreenRoot=document.documentElement,fullscreenButton=$("fullscreen-button");
+  let fullscreen=false,nativeFullscreen=false,fullscreenPending=false,pageScroll=[0,0];
+  function setFullscreen(value){
+    fullscreen=value;fullscreenRoot.classList.toggle("schedule-fullscreen",value);
+    const name=value?"全画面表示を終了":"スケジュールを全画面表示";
+    fullscreenButton.setAttribute("aria-label",name);fullscreenButton.setAttribute("aria-pressed",String(value));fullscreenButton.title=name;
+    if(!value){nativeFullscreen=false;window.scrollTo(...pageScroll);fullscreenButton.focus({preventScroll:true});}
+  }
+  async function exitScheduleFullscreen(){
+    if(fullscreenPending)return;
+    if(document.fullscreenElement===fullscreenRoot){
+      try{await document.exitFullscreen();}catch{toast("右上の終了ボタン、またはEscキーでもう一度終了してください。");return;}
+    }
+    if(fullscreen)setFullscreen(false);
+  }
+  fullscreenButton.onclick=async()=>{
+    if(fullscreenPending||drag||rowDrag?.active)return;
+    if(fullscreen){await exitScheduleFullscreen();return;}
+    pageScroll=[window.scrollX,window.scrollY];setFullscreen(true);
+    // Keep the viewport-sized layout when native fullscreen is unavailable (e.g. an embedded browser).
+    if(fullscreenRoot.requestFullscreen&&document.fullscreenEnabled){
+      fullscreenPending=true;fullscreenButton.disabled=true;
+      try{await fullscreenRoot.requestFullscreen();nativeFullscreen=document.fullscreenElement===fullscreenRoot;}
+      catch{nativeFullscreen=false;}
+      finally{fullscreenPending=false;fullscreenButton.disabled=false;}
+    }
+  };
+  document.addEventListener("fullscreenchange",()=>{
+    if(document.fullscreenElement===fullscreenRoot){nativeFullscreen=true;}
+    else if(fullscreen&&nativeFullscreen)setFullscreen(false);
+  });
+  document.addEventListener("keydown",event=>{
+    if(event.key==="Escape"&&fullscreen&&!dialogOpen()&&!drag&&!rowDrag?.active&&!fullscreenPending){event.preventDefault();exitScheduleFullscreen();}
+  },true);
   rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
   if(shared.enabled){
     try{await shared.initialize({
