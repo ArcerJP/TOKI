@@ -53,6 +53,60 @@ test('personal edits cannot make a meeting available or alter another person',()
   assert.deepEqual(S.personRanges(next,0,date),[r(540,720),r(780,1080)]);assert.deepEqual(next.meetings,b.meetings);
   const deleted=S.editPerson(next,0,date,[r(540,720)],[],id);assert.deepEqual(S.personRanges(deleted,0,date),[r(780,1080)]);
 });
+test('expanding both meeting edges synchronizes fixed participants and preserves everyone else',()=>{
+  const b=S.reserve(base(),'g',date,[r(780,840)],['C'],id),meeting=b.meetings[0];
+  assert.deepEqual(S.meetingAvailability(b,meeting.id),[r(600,1020)]);
+  const next=S.adjustMeeting(b,meeting.id,r(720,900),id);
+  assert.deepEqual(next.meetings[0],{...meeting,start:720,end:900});
+  assert.deepEqual(S.personRanges(next,0,date),[r(540,720),r(900,1080)]);
+  assert.deepEqual(S.personRanges(next,1,date),[r(600,720),r(900,1020)]);
+  assert.deepEqual(S.personRanges(next,2,date),S.personRanges(b,2,date));
+  assert.deepEqual(S.ranges(next,'g:h',date),[r(600,720),r(900,1020)]);
+  assert.deepEqual(b.meetings[0],meeting);
+});
+test('overlapping and separate moves restore the old time and reserve only the new time',()=>{
+  const b=S.reserve(base(),'g',date,[r(780,840)],['C'],id),meeting=b.meetings[0];
+  for(const range of [r(810,870),r(600,660)]){
+    const next=S.adjustMeeting(b,meeting.id,range,id);
+    assert.equal(next.meetings[0].end-next.meetings[0].start,60);
+    assert.deepEqual(S.personRanges(next,0,date),[{start:540,end:range.start},{start:range.end,end:1080}]);
+    const restored=S.release(next,meeting.id,{},id);
+    for(let p=0;p<3;p++)assert.deepEqual(S.personRanges(restored,p,date),S.personRanges(base(),p,date));
+  }
+});
+test('a conflicting participant or another meeting rejects the complete change without mutations',()=>{
+  let b=S.reserve(base(),'g',date,[r(780,840)],['C'],id);const meeting=b.meetings[0];
+  b=S.reserve(b,'h',date,[r(900,960)],[],id);const before=structuredClone(b);
+  for(const range of [r(570,630),r(780,1050),r(840,930),r(450,510),r(1410,1470)])assert.throws(()=>S.adjustMeeting(b,meeting.id,range,id),{message:'⚠️可能時間がありません'});
+  assert.deepEqual(b,before);
+  assert.deepEqual(S.meetingAvailability(b,meeting.id),[r(600,900),r(960,1020)]);
+});
+test('meeting adjustments keep original participants after changes to group membership',()=>{
+  let b=S.reserve(base(),'g',date,[r(780,840)],['C'],id);const meeting=b.meetings[0];
+  b=M.setGroup(b,'g','企画局',[1,2]);const next=S.adjustMeeting(b,meeting.id,r(600,660),id);
+  assert.deepEqual(next.meetings[0].members,[0,1]);assert.deepEqual(S.personRanges(next,2,date),[r(720,960)]);
+  assert.deepEqual(S.personRanges(next,0,date),[r(540,600),r(660,1080)]);
+});
+test('shrinking and zero length adjustments restore exactly the freed time',()=>{
+  let b=S.reserve(base(),'g',date,[r(720,900)],[],id);const meeting=b.meetings[0];
+  b=S.adjustMeeting(b,meeting.id,r(750,870),id);assert.deepEqual(S.personRanges(b,2,date),[r(720,750),r(870,960)]);
+  b=S.adjustMeeting(b,meeting.id,r(870,870),id);assert.equal(b.meetings.length,0);
+  for(let p=0;p<3;p++)assert.deepEqual(S.personRanges(b,p,date),S.personRanges(base(),p,date));
+});
+test('meeting drags preserve precise duration, adjust both edges, and retain invalid proposals for rejection',()=>{
+  const meeting=r(780,835);
+  assert.deepEqual(S.meetingDragRange(meeting,'move',800,831),r(810,865));
+  assert.deepEqual(S.meetingDragRange(meeting,'move',800,770),r(750,805));
+  assert.deepEqual(S.meetingDragRange(meeting,'start',780,721),r(720,835));
+  assert.deepEqual(S.meetingDragRange(meeting,'end',835,901),r(780,900));
+  assert.deepEqual(S.meetingDragRange(meeting,'start',780,900),r(835,835));
+  assert.deepEqual(S.meetingDragRange(meeting,'move',800,470),r(450,505));
+});
+test('a precise minute boundary cannot be rounded into participant availability',()=>{
+  let b=base();b.events[1].end=770;b=S.reserve(b,'g',date,[r(720,750)],[],id);
+  assert.throws(()=>S.adjustMeeting(b,b.meetings[0].id,r(720,780),id),/可能時間がありません/);
+  const next=S.adjustMeeting(b,b.meetings[0].id,r(740,770),id);assert.deepEqual(S.personRanges(next,1,date),[r(600,740)]);
+});
 test('people reordering and deletion retain correct MTG participant identities',()=>{
   const b=S.reserve(base(),'g',date,[r(720,780)],[],id),moved=M.reorderPeople(b,2,0);
   assert.deepEqual(moved.meetings[0].members.map(p=>moved.people[p]),['A','B','C']);

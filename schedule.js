@@ -61,6 +61,30 @@
     for(const p of members)writePerson(next,p,meeting.date,[...personRanges(next,p,meeting.date),...freed],makeId);
     return check(next);
   }
+  function meetingMemberRanges(board,meetingId){
+    const meeting=board.meetings.find(m=>m.id===meetingId);
+    if(!meeting)throw Error('MTGが更新されています。最新の表示で操作してください。');
+    // The original reservation is reusable only by its fixed participants.
+    return meeting.members.map(person=>({person,values:A.subtract([...personRanges(board,person,meeting.date),meeting],meetingsFor(board,person,meeting.date).filter(m=>m.id!==meetingId))}));
+  }
+  function meetingAvailability(board,meetingId){return A.common(meetingMemberRanges(board,meetingId).map(member=>member.values));}
+  function meetingDragRange(meeting,mode,origin,cursor){
+    const snap=value=>Math.round(value/30)*30;
+    if(mode==='move'){const delta=snap(cursor-origin);return {start:meeting.start+delta,end:meeting.end+delta};}
+    if(mode==='start')return {start:Math.min(snap(cursor),meeting.end),end:meeting.end};
+    if(mode==='end')return {start:meeting.start,end:Math.max(snap(cursor),meeting.start)};
+    throw Error('MTGの操作を確認してください。');
+  }
+  function adjustMeeting(board,meetingId,{start,end},makeId=id){
+    if(!Number.isInteger(start)||!Number.isInteger(end)||start<480||end>1440||start>end)throw Error('⚠️可能時間がありません');
+    const members=meetingMemberRanges(board,meetingId);
+    if(start===end)return release(board,meetingId,{},makeId);
+    if(A.subtract([{start,end}],A.common(members.map(member=>member.values))).length)throw Error('⚠️可能時間がありません');
+    const next=M.clone(board),meeting=next.meetings.find(m=>m.id===meetingId);
+    meeting.start=start;meeting.end=end;
+    for(const {person,values} of members)writePerson(next,person,meeting.date,values,makeId);
+    return check(next);
+  }
   function removeGroup(board,group,makeId=id){
     let next=M.clone(board);for(const m of next.meetings.filter(m=>m.group===group))next=release(next,m.id,{},makeId);
     next.groups=next.groups.filter(g=>g.id!==group);return check(next);
@@ -83,6 +107,6 @@
       if(key===group)return `hsl(${hue} 55% 35%)`;
     }
   }
-  const api={migrate,participants,personRanges,ranges,editPerson,movePersonRange,meetingSelection,reserve,release,removeGroup,exportText,color};
+  const api={migrate,participants,personRanges,ranges,editPerson,movePersonRange,meetingSelection,reserve,release,meetingAvailability,meetingDragRange,adjustMeeting,removeGroup,exportText,color};
   if(node)module.exports=api;else window.TokiSchedule=api;
 })();
