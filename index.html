@@ -19,6 +19,9 @@
   <script src="data.js" defer></script>
   <script src="model.js" defer></script>
   <script src="row-drag.js" defer></script>
+  <script src="calendar-import.js" defer></script>
+  <script src="google-calendar.js" defer></script>
+  <script src="google-import-ui.js" defer></script>
   <script src="app.js" defer></script>
   <script src="pwa.js" defer></script>
 </head>
@@ -39,7 +42,7 @@
       <div class="date-tools"><button id="previous-week" aria-label="前の週" title="前の週へ">≪</button><button id="previous" aria-label="前の日" title="前の日へ">‹</button><label class="sr-only" for="date-select">表示する日</label><select id="date-select"></select><button id="next" aria-label="次の日" title="次の日へ">›</button><button id="next-week" aria-label="次の週" title="次の週へ">≫</button><span class="member-count">16人</span></div>
       <div class="actions"><button id="undo" title="元に戻す（Ctrl+Z）" disabled>↶ 元に戻す</button><button id="redo" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button><button id="print-button">PDF出力</button><button id="add-button" class="primary">＋ 予定を追加</button></div>
     </section>
-    <div class="roster-toolbar"><button id="add-person">＋ 人を追加</button><button id="add-group">＋ グループを追加</button><button id="hint-button" class="hint-button" aria-haspopup="dialog" aria-controls="hint-dialog">💡ヒント</button></div>
+    <div class="roster-toolbar"><button id="add-person">＋ 人を追加</button><button id="add-group">＋ グループを追加</button><button id="google-import-button" aria-haspopup="dialog" aria-controls="google-import-dialog">Googleカレンダーから取り込む</button><button id="hint-button" class="hint-button" aria-haspopup="dialog" aria-controls="hint-dialog">💡ヒント</button></div>
     <div class="sr-only row-drag-status" id="row-drag-status" role="status"></div>
     <div class="chart-caption"><span><i class="legend"></i>参加できる時間<span id="day-summary"></span></span></div>
     <div class="chart-panel" id="chart-panel">
@@ -88,6 +91,23 @@
     <div class="dialog-actions"><button type="button" id="remove-row" class="danger" hidden>削除</button><span></span><button type="button" id="cancel-roster">キャンセル</button><button type="submit" class="primary">保存</button></div>
   </form></dialog>
   <dialog id="share-dialog"><div class="dialog-heading"><h2>共有URL</h2><button id="close-share" class="icon-button" aria-label="閉じる">×</button></div><label for="share-url">このURLを参加者に送ってください</label><input id="share-url" readonly><p>URLを知っている人は全員の予定を閲覧・編集できます。</p></dialog>
+  <dialog id="google-import-dialog" aria-labelledby="google-import-title">
+    <div class="dialog-heading"><h2 id="google-import-title">Googleカレンダーから取り込む</h2><button type="button" id="close-google-import" class="icon-button" aria-label="取り込み画面を閉じる">×</button></div>
+    <p class="import-help">メインカレンダーの「予定あり」の時間帯だけを取得します。予定のタイトル・詳細・場所は取得しません。</p>
+    <label for="google-import-person">取り込み先の人</label><select id="google-import-person"></select>
+    <div class="form-grid"><div><label for="google-time-min">取得開始（timeMin）</label><input id="google-time-min" type="datetime-local" step="60" required></div><div><label for="google-time-max">取得終了（timeMax）</label><input id="google-time-max" type="datetime-local" step="60" required></div></div>
+    <p class="import-help">日本時間・最大366日。参加可能を入れる範囲は毎日8:00〜24:00です。終了時刻は含みません。</p>
+    <details class="import-details"><summary>取り込みルール・データの扱い</summary><ul class="import-rules"><li>30分枠の一部にでも予定があれば、その枠は参加可能にしません。例：11:10〜11:50の予定 → 11:00〜12:00を除外。</li><li>Google側で「空き時間」に設定した予定は、空き時間として扱います。</li><li>選んだ人の指定期間内の予定を置き換えます。期間外・他の人・グループの予定は保持します。</li><li>Googleログインはこの機能だけに使います。Googleの認証情報や予定は共有先に保存せず、確認後の「参加可能」だけを予定表に反映します。</li></ul></details>
+    <div class="google-controls"><button type="button" id="google-login">Googleでログイン</button><button type="button" id="google-logout" hidden>ログアウト</button><span id="google-login-status" role="status"></span></div>
+    <button type="button" id="google-preview-button" class="primary" disabled>空き時間を確認</button>
+    <p id="google-import-error" class="error" role="alert"></p>
+    <section id="google-import-preview" hidden aria-label="取り込み内容の確認">
+      <h3>反映する参加可能時間</h3><p id="google-import-summary"></p>
+      <div class="import-preview-scroll"><table class="import-preview-table"><thead><tr><th>日付</th><th>参加可能</th></tr></thead><tbody id="google-import-rows"></tbody></table></div>
+      <p class="import-help">「この内容で置き換える」で保存します。共有版では共有URLを知っている人が閲覧・編集できます。直後は「元に戻す」で取り消せます。</p>
+      <button type="button" id="google-apply-button" class="primary">この内容で置き換える</button>
+    </section>
+  </dialog>
   <div id="print-area"></div>
 </body>
 </html>
