@@ -5,6 +5,7 @@
   let {people,dates,availability} = window.TOKI_DATA;
   const shared=window.TokiShared;
   const M=window.TokiModel;
+  let rowDrag=null;
   let groups=[],ready=!shared.enabled,busy=false,revision=null,pendingBoard=null;
   $("schedule-app").hidden=shared.enabled;
   $("auth-gate").hidden=!shared.enabled;
@@ -29,7 +30,7 @@
   catch{loadFailed=true;$("save-status").textContent="保存データを読めませんでした";}
   function toast(message){$("toast").textContent=message;$("toast").hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$("toast").hidden=true,3500);}
   function persist(){try{localStorage.setItem(KEY,JSON.stringify({version:2,board:snapshot()}));$("save-status").textContent="このブラウザーに保存済み";}catch{$("save-status").textContent="保存できません（この画面のみ）";toast("自動保存できません。閉じる前にPDF出力してください。");}}
-  const editable=()=>!busy&&ready;
+  const editable=()=>!busy&&ready&&!rowDrag?.active;
   function setBusy(value){busy=value;$("roster-form").querySelectorAll("button").forEach(b=>b.disabled=value);$("add-person").disabled=value||!ready;$("add-group").disabled=value||!ready;$("event-form").querySelector('button[type="submit"]').disabled=value;$("delete-button").disabled=value;$("add-button").disabled=value||!ready;$("undo").disabled=value||!undo.length;$("redo").disabled=value||!redo.length;}
   async function saveNext(next){
     if(!editable())return false;
@@ -47,11 +48,11 @@
     if(board.version<=revision)return;
     const payload=board.payload;
     if(!M.valid(payload)||JSON.stringify(payload.dates)!==JSON.stringify(dates)){$("auth-message").textContent="共有データの形式を確認できません。再読み込みしてください。";return;}
-    if(busy||drag||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
+    if(busy||drag||rowDrag?.active||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
     const changed=revision!==null;assign(payload);revision=board.version;undo=[];redo=[];ready=true;
     $("auth-gate").hidden=true;$("schedule-app").hidden=false;$("save-status").textContent="共有保存済み";render();if(changed)toast("他のメンバーの変更を反映しました");
   }
-  function applyPending(){if(pendingBoard&&!busy&&!drag&&!dialogOpen()){const board=pendingBoard;pendingBoard=null;receiveBoard(board);}}
+  function applyPending(){if(pendingBoard&&!busy&&!drag&&!rowDrag?.active&&!dialogOpen()){const board=pendingBoard;pendingBoard=null;receiveBoard(board);}}
   function options(target,values,text){values.forEach((v,i)=>{const option=el("option",null,text(v,i));option.value=v;target.append(option);});}
   options($("date-select"),dates,d=>`2026年 ${label(d)}`);options($("event-date"),dates,d=>label(d));
   function chartFor(date,interactive=true){
@@ -60,10 +61,12 @@
     times.append(el("div","name-heading","参加可能時間"));const ticks=el("div","times");
     for(let m=START;m<END;m+=30)ticks.append(el("div",`time-tick ${m%60===0?"hour":""}`,time(m)));
     times.append(ticks);head.append(day,times);chart.append(head);
-    rows.forEach(({name,person,group,nested,key})=>{
+    rows.forEach(({name,person,group,nested,key,context})=>{
       const row=el("div","person-row"+(group?" group-row":"")+(nested?" member-row":""));row.style.setProperty("--person-color",group?"#1c574b":colors[Math.floor(person/4)%colors.length]);
+      if(interactive){row.dataset.name=name;row.dataset.context=group?group.id:(context||"");if(group)row.dataset.group=group.id;else row.dataset.person=person;}
       const nameCell=el("div","person-name");
-      if(group&&interactive){const toggle=el("button","group-toggle",collapsed.has(group.id)?"▸":"▾");toggle.type="button";toggle.setAttribute("aria-expanded",String(!collapsed.has(group.id)));toggle.setAttribute("aria-label",group.name+(collapsed.has(group.id)?"を展開":"を折りたたむ"));toggle.onclick=()=>{if(drag)return;if(collapsed.has(group.id))collapsed.delete(group.id);else collapsed.add(group.id);try{localStorage.setItem("toki-collapsed-groups",JSON.stringify([...collapsed]));}catch{}render();};nameCell.append(toggle);}else nameCell.append(el("span","person-dot"));
+      if(interactive&&!group){const handle=el("button","row-drag-handle","⋮⋮");handle.type="button";handle.setAttribute("aria-label",name+"の行を移動");handle.title="ドラッグで移動／上下キーで並べ替え";nameCell.append(handle);}
+      if(group&&interactive){const toggle=el("button","group-toggle",collapsed.has(group.id)?"▸":"▾");toggle.type="button";toggle.setAttribute("aria-expanded",String(!collapsed.has(group.id)));toggle.setAttribute("aria-label",group.name+(collapsed.has(group.id)?"を展開":"を折りたたむ"));toggle.onclick=()=>{if(drag||rowDrag?.active)return;if(collapsed.has(group.id))collapsed.delete(group.id);else collapsed.add(group.id);try{localStorage.setItem("toki-collapsed-groups",JSON.stringify([...collapsed]));}catch{}render();};nameCell.append(toggle);}else nameCell.append(el("span","person-dot"));
       const nameLabel=el(interactive?"button":"span","row-name",name);if(interactive){nameLabel.type="button";nameLabel.title=name+"を編集・削除";nameLabel.setAttribute("aria-label",name+"を編集・削除");nameLabel.onclick=()=>openRoster(group?"group":"person",group?group.id:person);}nameCell.append(nameLabel);if(group)nameCell.append(el("span","group-size",String(group.members.length)));
       const track=el("div","timeline");track.dataset.row=key;
       if(interactive){track.tabIndex=0;track.setAttribute("role","group");track.setAttribute("aria-label",`${name}の予定。Enterで追加`);track.addEventListener("keydown",e=>{if(e.target===track&&e.key==="Enter"){e.preventDefault();openEditor(null,{row:key});}});}
@@ -84,7 +87,7 @@
     if(interactive){const add=el("div","bottom-add-row"),button=el("button","bottom-add","＋ 人を追加");button.type="button";button.onclick=()=>openRoster("person",null);add.append(button);chart.append(add);}
     return chart;
   }
-  function render(){document.querySelector(".member-count").textContent=`${people.length}人 · ${groups.length}グループ`;const scroll=$("chart-scroll"),x=scroll.scrollLeft,y=scroll.scrollTop;$("chart").replaceWith(Object.assign(chartFor(selected),{id:"chart"}));scroll.scrollLeft=x;scroll.scrollTop=y;$("date-select").value=selected;$("previous").disabled=selected===dates[0];$("next").disabled=selected===dates.at(-1);$("undo").disabled=!undo.length;$("redo").disabled=!redo.length;$("add-button").disabled=busy||!ready||(!people.length&&!groups.length);const list=events.filter(e=>e.date===selected);$("day-summary").textContent=`${new Set(list.filter(e=>e.person!==undefined).map(e=>e.person)).size}/${people.length}人 · ${list.length}枠`;}
+  function render(){if(rowDrag?.active)return;document.querySelector(".member-count").textContent=`${people.length}人 · ${groups.length}グループ`;const scroll=$("chart-scroll"),x=scroll.scrollLeft,y=scroll.scrollTop;$("chart").replaceWith(Object.assign(chartFor(selected),{id:"chart"}));scroll.scrollLeft=x;scroll.scrollTop=y;$("date-select").value=selected;$("previous").disabled=selected===dates[0];$("next").disabled=selected===dates.at(-1);$("undo").disabled=!undo.length;$("redo").disabled=!redo.length;$("add-button").disabled=busy||!ready||(!people.length&&!groups.length);const list=events.filter(e=>e.date===selected);$("day-summary").textContent=`${new Set(list.filter(e=>e.person!==undefined).map(e=>e.person)).size}/${people.length}人 · ${list.length}枠`;}
   function openEditor(event=null,defaults={}){if(!editable()||(!people.length&&!groups.length))return;$("event-person").replaceChildren();options($("event-person"),[...groups.map(g=>`g:${g.id}`),...people.map((_,i)=>`p:${i}`)],key=>key.startsWith("g:")?"グループ："+groups.find(g=>g.id===key.slice(2)).name:people[Number(key.slice(2))]);editing=event?.id||null;$("dialog-title").textContent=editing?"予定を編集":"予定を追加";$("event-title").value=event?.title??"参加可能";$("event-detail").value=event?.detail??"";$("event-person").value=event?M.rowKey(event):(defaults.row??(people.length?"p:0":"g:"+groups[0].id));$("event-date").value=event?.date??selected;$("event-start").value=time(event?.start??defaults.start??540);const end=event?.end??defaults.end??600;$("event-end").value=end===1440?"00:00":time(end);$("delete-button").hidden=!editing;$("form-error").textContent="";$("event-dialog").showModal();$("event-title").focus();$("event-title").select();}
   $("event-form").addEventListener("submit",async e=>{e.preventDefault();if(!editable())return;const start=minute($("event-start").value),rawEnd=minute($("event-end").value),end=rawEnd===0?1440:rawEnd;if(!Number.isFinite(start)||!Number.isFinite(end)||start<START||end>END||end<=start){$("form-error").textContent="8:00〜24:00の範囲で、終了を開始より後にしてください。";return;}const event={id:editing||`event-${Date.now()}-${Math.random().toString(36).slice(2)}`,...M.owner($("event-person").value),date:$("event-date").value,start,end,title:$("event-title").value.trim()||"参加可能",detail:$("event-detail").value.trim()};const next=clone(events);if(editing)next[next.findIndex(x=>x.id===editing)]=event;else next.push(event);selected=event.date;if(await commit(next,editing?"予定を更新しました":"予定を追加しました"))$("event-dialog").close();});
   ["close-dialog","cancel-dialog"].forEach(id=>$(id).onclick=()=>$("event-dialog").close());
@@ -112,7 +115,7 @@
   let printScope="current";
   $("print-button").onclick=()=>$("print-dialog").showModal();$("close-print").onclick=()=>$("print-dialog").close();
   $("print-form").onsubmit=e=>{e.preventDefault();printScope=$("print-scope").value;buildPrint(printScope);$("print-dialog").close();window.print();};window.addEventListener("beforeprint",()=>buildPrint(printScope));window.addEventListener("afterprint",()=>{printScope="current";});
-  window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===2&&M.valid(saved.board)){if($("event-dialog").open||drag){toast("別タブで変更されています。この画面の編集を保存すると上書きされます。");return;}assign(saved.board);undo=[];redo=[];render();toast("別タブの変更を反映しました");}}catch{}});
+  window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===2&&M.valid(saved.board)){if(dialogOpen()||drag||rowDrag?.active){toast("別タブで変更されています。この画面の編集を保存すると上書きされます。");return;}assign(saved.board);undo=[];redo=[];render();toast("別タブの変更を反映しました");}}catch{}});
   document.querySelectorAll("dialog").forEach(dialog=>dialog.addEventListener("close",applyPending));
   let rosterKind,rosterId;
   function openRoster(kind,id){
@@ -149,6 +152,7 @@
     catch{$("share-url").value=shared.shareUrl();$("share-dialog").showModal();$("share-url").select();}
   };
   $("close-share").onclick=()=>$("share-dialog").close();
+  rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
   if(shared.enabled){
     try{await shared.initialize({
       board:receiveBoard,
