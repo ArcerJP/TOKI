@@ -1,0 +1,19 @@
+# Private availability data; migrate to an access-controlled database before publishing.
+/data.local.js
+/verify.cjs
+/output/
+/preview.png
+/mobile-preview.png
+/*.zip
+
+# Credentials and local-only configuration
+.env
+.env.*
+!.env.example
+*.local
+
+# Local dependencies and temporary files
+node_modules/
+tmp/
+.sites-runtime/
+*.log
