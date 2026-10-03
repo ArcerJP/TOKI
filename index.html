@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#1c574b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="TOKI">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>TOKI | みんなの予定</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c574b'/%3E%3Cpath d='M7 10h18M10 16h12M13 22h12' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
@@ -14,6 +20,7 @@
   <script src="model.js" defer></script>
   <script src="row-drag.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="pwa.js" defer></script>
 </head>
 <body>
   <section id="auth-gate" class="auth-gate" hidden>
@@ -24,8 +31,10 @@
   <main class="app" id="schedule-app">
     <header class="topbar">
       <div class="brand"><span class="brand-icon" aria-hidden="true">▤</span><strong>TOKI</strong><span class="brand-divider"></span><h1>みんなの予定</h1></div>
-      <div class="account-tools"><span id="save-status" role="status">このブラウザーに保存</span><button id="copy-link" hidden>共有URLをコピー</button></div>
+      <div class="account-tools"><span id="save-status" role="status">このブラウザーに保存</span><button id="install-app" hidden>アプリをインストール</button><button id="update-app" hidden>最新版に更新</button><button id="copy-link" hidden>共有URLをコピー</button></div>
     </header>
+    <p id="pwa-status" class="connection-notice" role="status" hidden></p>
+    <p id="connection-status" class="connection-notice" role="status" hidden></p>
     <section class="toolbar" aria-label="表示と編集">
       <div class="date-tools"><button id="previous-week" aria-label="前の週" title="前の週へ">≪</button><button id="previous" aria-label="前の日" title="前の日へ">‹</button><label class="sr-only" for="date-select">表示する日</label><select id="date-select"></select><button id="next" aria-label="次の日" title="次の日へ">›</button><button id="next-week" aria-label="次の週" title="次の週へ">≫</button><span class="member-count">16人</span></div>
       <div class="actions"><button id="undo" title="元に戻す（Ctrl+Z）" disabled>↶ 元に戻す</button><button id="redo" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button><button id="print-button">PDF出力</button><button id="add-button" class="primary">＋ 予定を追加</button></div>
@@ -53,6 +62,8 @@
       <li>グループ内の人を未所属の行や表の末尾へドラッグすると、そのグループへの所属だけを解除します。</li>
       <li>空き枠をドラッグすると、予定を追加できます。</li>
       <li>予定をドラッグすると移動でき、両端をドラッグすると時間を変更できます。</li>
+      <li>「アプリをインストール」またはブラウザーのメニューから、TOKIを端末に追加できます。iPhone・iPadでは共有メニューの「ホーム画面に追加」を使います。</li>
+      <li>オフラインでは最後に取得した共有予定を閲覧できます。編集は接続が戻ってから行ってください。</li>
     </ul>
   </dialog>
   <dialog id="event-dialog">

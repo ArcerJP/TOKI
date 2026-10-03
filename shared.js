@@ -5,7 +5,8 @@
   const config = window.TOKI_CONFIG;
   const hooks = {};
   const storageKey = `toki-participant-v2:${config?.boardId}`;
-  let client, token, refreshing = false;
+  const offlineKey = `toki-offline-v1:${config?.boardId}`;
+  let client, token, refreshing = false, online = false, fetchedAt = null;
   const emit = (type, value) => hooks[type]?.(value);
   const error = (message, code) => Object.assign(new Error(message), {code});
   const messages = {
@@ -22,8 +23,37 @@
     try { localStorage.setItem(storageKey, JSON.stringify({token})); }
     catch { emit("warning", "このブラウザーでは共有URLを記憶できません。次回も共有URLから開いてください。"); }
   }
+  const validBoard = board => Number.isSafeInteger(board?.version) && board.version >= 0 && window.TokiModel.valid(board.payload);
+  function connection(value) {
+    online = value;
+    emit('state', {online, fetchedAt});
+  }
+  function cacheBoard(board) {
+    if (!validBoard(board)) throw error(messages.INVALID, 'INVALID');
+    // A slow poll must not replace a newer successful save in the offline snapshot.
+    const previous = cachedBoard();
+    if (previous && previous.version > board.version) return;
+    fetchedAt = Date.now();
+    try { localStorage.setItem(offlineKey, JSON.stringify({token, board, fetchedAt})); }
+    catch { emit('warning', '端末に予定を保存できないため、次回オフラインで閲覧できません。'); }
+  }
+  function cachedBoard() {
+    try {
+      const cached = JSON.parse(localStorage.getItem(offlineKey));
+      if (cached?.token === token && Number.isFinite(cached.fetchedAt) && validBoard(cached.board)) {
+        fetchedAt = cached.fetchedAt;
+        return cached.board;
+      }
+    } catch {}
+    return null;
+  }
+  function forgetCachedBoard() {
+    try { if (JSON.parse(localStorage.getItem(offlineKey))?.token === token) localStorage.removeItem(offlineKey); } catch {}
+    fetchedAt = null;
+  }
   async function request(action, extra = {}) {
     if (!client || !token) throw error(messages.LINK, "LINK");
+    if (navigator.onLine === false) throw error(messages.NETWORK, 'NETWORK');
     let result;
     try { result = await client.rpc("toki_share", {p_token:token, p_action:action, ...extra}); }
     catch { throw error(messages.NETWORK, "NETWORK"); }
@@ -34,12 +64,18 @@
     return result.data;
   }
   const fetchBoard = () => request("read");
-  const accept = board => emit("board", board);
+  function accept(board) {
+    cacheBoard(board); remember(); emit('board', board); connection(true);
+  }
+  function failed(failure) {
+    if (failure.code === 'LINK') forgetCachedBoard();
+    connection(false); emit('error', failure);
+  }
   async function refresh() {
     if (!token || refreshing) return;
     refreshing = true;
-    try { accept(await fetchBoard()); emit("connection", "接続中"); }
-    catch (failure) { emit("error", failure); }
+    try { accept(await fetchBoard()); }
+    catch (failure) { failed(failure); }
     finally { refreshing = false; }
   }
   async function initialize(callbacks) {
@@ -57,13 +93,29 @@
       document.head.append(script);
     });
     client = window.TokiSupabase.createClient(config.url, config.publishableKey, {auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}});
-    const board = await fetchBoard();
-    remember(); accept(board);
     setInterval(() => { if (!document.hidden) refresh(); }, 5000);
     window.addEventListener("online", refresh);
+    window.addEventListener('offline', () => connection(false));
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+    try { accept(await fetchBoard()); }
+    catch (failure) {
+      // A cache is usable only for this exact sharing token, and only on a network failure.
+      const cached = failure.code === 'NETWORK' ? cachedBoard() : null;
+      if (cached) emit('board', cached);
+      failed(failure);
+      if (!cached) throw failure;
+    }
   }
-  const save = (payload, version) => request("save_calendar", {p_payload:payload, p_version:version});
+  async function save(payload, version) {
+    if (!online) throw error('オフラインでは閲覧のみです。接続が戻るまでお待ちください。', 'NETWORK');
+    try {
+      const board = await request('save_calendar', {p_payload:payload, p_version:version});
+      cacheBoard(board); connection(true); return board;
+    } catch (failure) {
+      if (failure.code !== 'CONFLICT') failed(failure);
+      throw failure;
+    }
+  }
   const shareUrl = () => token ? `${config.siteUrl}#share=${token}` : config.siteUrl;
-  window.TokiShared = {enabled, initialize, save, refresh, fetchBoard, shareUrl};
+  window.TokiShared = {enabled, initialize, save, refresh, fetchBoard, shareUrl, get online(){return online;}};
 })();
