@@ -60,7 +60,8 @@
   function plan(board,person,range,busy,makeId=()=>`google-${crypto.randomUUID()}`){
     const M=window.TokiModel;
     if(!M.valid(board)||!Number.isInteger(person)||!board.people[person])throw Error('取り込み先の人を選択してください。');
-    const next=M.clone(board),ranges=availability(range,busy),events=[];let affected=0;
+    const next=M.clone(board),rawRanges=availability(range,busy),events=[];let affected=0;
+    const ranges=board.schemaVersion===4?rawRanges.flatMap(slot=>window.TokiAvailability.subtract([slot],board.meetings.filter(m=>m.date===slot.date&&m.members.includes(person))).map(r=>({...r,date:slot.date}))):rawRanges;
     for(const event of next.events){
       const day=midnight(event.date),start=day+event.start*MINUTE,end=day+event.end*MINUTE;
       if(event.person!==person||end<=range.timeMin||start>=range.timeMax){events.push(event);continue;}
@@ -69,7 +70,7 @@
       if(left)events.push({...event,end:(range.timeMin-day)/MINUTE});
       if(right)events.push({...event,id:left?makeId():event.id,start:(range.timeMax-day)/MINUTE});
     }
-    for(const slot of ranges)events.push({id:makeId(),person,...slot,title:'参加可能',detail:''});
+    for(const slot of ranges)events.push({id:makeId(),person,...slot,...(board.schemaVersion===4?{}:{title:'可能時間',detail:''})});
     next.events=events;
     if(events.length>2000)throw Error('予定の上限（全員合計2000件）を超えます。取得期間を短くしてください。');
     if(!M.valid(next))throw Error('取り込み後の予定を確認できません。期間を見直してください。');

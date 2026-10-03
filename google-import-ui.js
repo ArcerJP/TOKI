@@ -46,12 +46,12 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen})=>{
   function renderPreview(){
     const {ranges,affected,personName,range}=preview.plan;
     const minutes=ranges.reduce((sum,r)=>sum+r.end-r.start,0);
-    $('google-import-summary').textContent=`${personName}：${ranges.length}枠・計${minutes/60}時間を参加可能として反映します。既存の予定${affected}件の指定期間内を置き換えます。`;
+    $('google-import-summary').textContent=`${personName}：${ranges.length}枠・計${minutes/60}時間を可能時間として反映します。既存の予定${affected}件の指定期間内を置き換えます。`;
     const rows=$('google-import-rows');rows.replaceChildren();
     for(let date=range.first;date&&date<=range.last;date=window.TokiModel.shiftDate(date,1)){
       const tr=document.createElement('tr'),day=document.createElement('th'),slots=document.createElement('td');day.scope='row';
       day.textContent=new Intl.DateTimeFormat('ja-JP',{month:'numeric',day:'numeric',weekday:'short',timeZone:'UTC'}).format(new Date(date+'T00:00:00Z'));
-      slots.textContent=ranges.filter(r=>r.date===date).map(r=>`${time(r.start)}〜${time(r.end)}`).join('、')||'参加可能なし';
+      slots.textContent=ranges.filter(r=>r.date===date).map(r=>`${time(r.start)}〜${time(r.end)}`).join('、')||'可能時間なし';
       tr.append(day,slots);rows.append(tr);
     }
     $('google-import-preview').hidden=false;

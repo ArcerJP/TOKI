@@ -18,6 +18,9 @@
   <script src="shared.js" defer></script>
   <script src="data.js" defer></script>
   <script src="model.js" defer></script>
+  <script src="availability.js" defer></script>
+  <script src="schedule.js" defer></script>
+  <script src="availability-ui.js" defer></script>
   <script src="row-drag.js" defer></script>
   <script src="calendar-import.js" defer></script>
   <script src="google-calendar.js" defer></script>
@@ -40,11 +43,11 @@
     <p id="connection-status" class="connection-notice" role="status" hidden></p>
     <section class="toolbar" aria-label="表示と編集">
       <div class="date-tools"><button id="previous-week" aria-label="前の週" title="前の週へ">≪</button><button id="previous" aria-label="前の日" title="前の日へ">‹</button><label class="sr-only" for="date-select">表示する日</label><select id="date-select"></select><button id="next" aria-label="次の日" title="次の日へ">›</button><button id="next-week" aria-label="次の週" title="次の週へ">≫</button><span class="member-count">16人</span></div>
-      <div class="actions"><button id="undo" title="元に戻す（Ctrl+Z）" disabled>↶ 元に戻す</button><button id="redo" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button><button id="print-button">PDF出力</button><button id="add-button" class="primary">＋ 予定を追加</button></div>
+      <div class="actions"><button id="undo" title="元に戻す（Ctrl+Z）" disabled>↶ 元に戻す</button><button id="redo" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button><button id="print-button">PDF出力</button><button id="export-availability" class="primary">可能時間書き出し</button></div>
     </section>
     <div class="roster-toolbar"><button id="add-person">＋ 人を追加</button><button id="add-group">＋ グループを追加</button><button id="google-import-button" aria-haspopup="dialog" aria-controls="google-import-dialog">Googleカレンダーから取り込む</button><button id="hint-button" class="hint-button" aria-haspopup="dialog" aria-controls="hint-dialog">💡ヒント</button></div>
     <div class="sr-only row-drag-status" id="row-drag-status" role="status"></div>
-    <div class="chart-caption"><span><i class="legend"></i>参加できる時間<span id="day-summary"></span></span></div>
+    <div class="chart-caption"><span><i class="legend"></i>可能時間<span id="day-summary"></span></span></div>
     <div class="chart-panel" id="chart-panel">
       <button id="fullscreen-button" class="fullscreen-button" type="button" aria-label="スケジュールを全画面表示" aria-pressed="false" title="スケジュールを全画面表示">
         <svg class="fullscreen-enter-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/></svg><span class="fullscreen-enter-label">全画面表示</span>
@@ -52,7 +55,7 @@
       </button>
       <div id="chart-scroll" class="chart-scroll" aria-label="みんなの予定表"><div id="chart" class="chart"></div></div>
     </div>
-    <footer><span id="week-range"></span><span>30分刻みの目盛り／時刻は1分単位で入力可能 · 予定をクリックして編集</span></footer>
+    <footer><span id="week-range"></span><span>空き枠をクリックで30分追加 · 両端を重ねて削除</span></footer>
     <p class="storage-note" id="storage-note">変更はこの端末の同じブラウザーに保存されます。ブラウザーの保存データを削除すると、編集内容も消えます。</p>
   </main>
   <dialog id="hint-dialog" aria-labelledby="hint-title">
@@ -63,22 +66,27 @@
       <li>名前の左の「⋮⋮」をドラッグすると、人やグループを並べ替えられます。</li>
       <li>人をグループへドラッグすると、所属を追加できます。</li>
       <li>グループ内の人を未所属の行や表の末尾へドラッグすると、そのグループへの所属だけを解除します。</li>
-      <li>空き枠をドラッグすると、予定を追加できます。</li>
-      <li>予定をドラッグすると移動でき、両端をドラッグすると時間を変更できます。</li>
+      <li>個人の空き枠をクリックすると30分追加、ドラッグすると範囲を指定して追加できます。</li>
+      <li>個人の可能時間はドラッグで移動・伸縮できます。クリックだけでは変更しません。両端を重ねて離すと削除できます。</li>
+      <li>グループには対象者全員の共通時間を表示します。人の横の✓で一時除外すると、名前に取り消し線が付きます。この設定は端末内だけに保存します。</li>
+      <li>グループの可能時間を縮めると、減らした部分が対象者のMTGになります。追加・移動はできません。</li>
+      <li>MTGを縮めると、その部分が対象者の可能時間に戻ります。MTGをクリックし、✖で一人ずつ解除もできます。</li>
+      <li>MTGと重なる個人の可能時間は追加できません。Google取込でもMTGを保持します。</li>
       <li>「アプリをインストール」またはブラウザーのメニューから、TOKIを端末に追加できます。iPhone・iPadでは共有メニューの「ホーム画面に追加」を使います。</li>
       <li>オフラインでは最後に取得した共有予定を閲覧できます。編集は接続が戻ってから行ってください。</li>
     </ul>
   </dialog>
-  <dialog id="event-dialog">
-    <form id="event-form">
-      <div class="dialog-heading"><h2 id="dialog-title">予定を追加</h2><button type="button" class="icon-button" id="close-dialog" aria-label="閉じる">×</button></div>
-      <label for="event-title">タイトル</label><input id="event-title" maxlength="100" placeholder="参加可能" autocomplete="off">
-      <div class="form-grid"><div><label for="event-person">人・グループ</label><select id="event-person"></select></div><div><label for="event-date">日にち</label><select id="event-date"></select></div></div>
-      <div class="form-grid"><div><label for="event-start">開始</label><input id="event-start" type="time" step="60" required></div><div><label for="event-end">終了</label><input id="event-end" type="time" step="60" required><small>翌0:00は「00:00」</small></div></div>
-      <label for="event-detail">詳細</label><textarea id="event-detail" rows="4" maxlength="2000" placeholder="必要なことをメモ"></textarea>
-      <p id="form-error" class="error" role="alert"></p>
-      <div class="dialog-actions"><button type="button" id="delete-button" class="danger">削除</button><span></span><button type="button" id="cancel-dialog">キャンセル</button><button type="submit" class="primary">保存</button></div>
-    </form>
+  <dialog id="meeting-dialog" aria-labelledby="meeting-title">
+    <div class="dialog-heading"><h2 id="meeting-title">MTG</h2><button id="close-meeting" class="icon-button" aria-label="MTGの対象者を閉じる">×</button></div>
+    <p id="meeting-time"></p><p class="import-help">✖でその人をMTGから外し、この時間を可能時間に戻します。</p><ul id="meeting-members"></ul><p id="meeting-error" class="error" role="alert"></p>
+  </dialog>
+  <dialog id="export-dialog" aria-labelledby="export-title">
+    <div class="dialog-heading"><h2 id="export-title">可能時間書き出し</h2><button id="close-export" class="icon-button" aria-label="書き出し画面を閉じる">×</button></div>
+    <label for="export-person">人・グループ</label><select id="export-person"></select>
+    <div class="form-grid"><div><label for="export-first">開始日</label><input id="export-first" type="date" required></div><div><label for="export-last">終了日</label><input id="export-last" type="date" required></div></div>
+    <p class="import-help">開始日・終了日を含む最大366日。グループは、この端末で対象にしているメンバーの共通時間です。</p>
+    <label for="export-result">コピーする内容</label><textarea id="export-result" rows="9" readonly></textarea><p id="export-error" class="error" role="alert"></p>
+    <div class="dialog-actions"><span></span><button id="copy-availability" class="primary">コピー</button></div>
   </dialog>
   <dialog id="print-dialog"><form id="print-form"><div class="dialog-heading"><h2>PDF出力</h2><button type="button" id="close-print" class="icon-button" aria-label="閉じる">×</button></div><label for="print-scope">出力する日にち</label><select id="print-scope"><option value="current">表示中の1日</option><option value="week">表示中の週・日曜〜土曜（1日ごとに改ページ）</option></select><p class="print-help">印刷画面で「PDFに保存」を選択してください。A3・横向きが推奨です。</p><div class="dialog-actions"><span></span><button type="submit" class="primary">印刷画面を開く</button></div></form></dialog>
   <div id="toast" role="status" class="toast" hidden></div>
@@ -96,14 +104,14 @@
     <p class="import-help">メインカレンダーの「予定あり」の時間帯だけを取得します。予定のタイトル・詳細・場所は取得しません。</p>
     <label for="google-import-person">取り込み先の人</label><select id="google-import-person"></select>
     <div class="form-grid"><div><label for="google-time-min">取得開始（timeMin）</label><input id="google-time-min" type="datetime-local" step="60" required></div><div><label for="google-time-max">取得終了（timeMax）</label><input id="google-time-max" type="datetime-local" step="60" required></div></div>
-    <p class="import-help">日本時間・最大366日。参加可能を入れる範囲は毎日8:00〜24:00です。終了時刻は含みません。</p>
-    <details class="import-details"><summary>取り込みルール・データの扱い</summary><ul class="import-rules"><li>30分枠の一部にでも予定があれば、その枠は参加可能にしません。例：11:10〜11:50の予定 → 11:00〜12:00を除外。</li><li>Google側で「空き時間」に設定した予定は、空き時間として扱います。</li><li>選んだ人の指定期間内の予定を置き換えます。期間外・他の人・グループの予定は保持します。</li><li>Googleログインはこの機能だけに使います。Googleの認証情報や予定は共有先に保存せず、確認後の「参加可能」だけを予定表に反映します。</li></ul></details>
+    <p class="import-help">日本時間・最大366日。可能時間を入れる範囲は毎日8:00〜24:00です。終了時刻は含みません。</p>
+    <details class="import-details"><summary>取り込みルール・データの扱い</summary><ul class="import-rules"><li>30分枠の一部にでも予定があれば、その枠は可能時間にしません。例：11:10〜11:50の予定 → 11:00〜12:00を除外。</li><li>Google側で「空き時間」に設定した予定は、空き時間として扱います。</li><li>選んだ人の指定期間内の予定を置き換えます。期間外・他の人・MTGは保持します。MTGと重なる時間は除外し、所属グループの共通時間も再計算します。</li><li>Googleログインはこの機能だけに使います。Googleの認証情報や予定は共有先に保存せず、確認後の「可能時間」だけを予定表に反映します。</li></ul></details>
     <div class="google-controls"><button type="button" id="google-login">Googleでログイン</button><button type="button" id="google-logout" hidden>ログアウト</button><span id="google-login-status" role="status"></span></div>
     <button type="button" id="google-preview-button" class="primary" disabled>空き時間を確認</button>
     <p id="google-import-error" class="error" role="alert"></p>
     <section id="google-import-preview" hidden aria-label="取り込み内容の確認">
-      <h3>反映する参加可能時間</h3><p id="google-import-summary"></p>
-      <div class="import-preview-scroll"><table class="import-preview-table"><thead><tr><th>日付</th><th>参加可能</th></tr></thead><tbody id="google-import-rows"></tbody></table></div>
+      <h3>反映する可能時間</h3><p id="google-import-summary"></p>
+      <div class="import-preview-scroll"><table class="import-preview-table"><thead><tr><th>日付</th><th>可能時間</th></tr></thead><tbody id="google-import-rows"></tbody></table></div>
       <p class="import-help">「この内容で置き換える」で保存します。共有版では共有URLを知っている人が閲覧・編集できます。直後は「元に戻す」で取り消せます。</p>
       <button type="button" id="google-apply-button" class="primary">この内容で置き換える</button>
     </section>

@@ -63,7 +63,7 @@
     }
     return result.data;
   }
-  const fetchBoard = () => request("read");
+  const fetchBoard = () => request("read_availability");
   function accept(board) {
     cacheBoard(board); remember(); emit('board', board); connection(true);
   }
@@ -109,7 +109,7 @@
   async function save(payload, version) {
     if (!online) throw error('オフラインでは閲覧のみです。接続が戻るまでお待ちください。', 'NETWORK');
     try {
-      const board = await request('save_calendar', {p_payload:payload, p_version:version});
+      const board = await request(payload.schemaVersion===4?'save_availability':'save_calendar', {p_payload:payload, p_version:version});
       cacheBoard(board); connection(true); return board;
     } catch (failure) {
       if (failure.code !== 'CONFLICT') failed(failure);

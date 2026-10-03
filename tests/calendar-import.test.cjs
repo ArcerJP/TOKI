@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const window={};for(const file of ['model.js','calendar-import.js'])vm.runInNewContext(fs.readFileSync(file,'utf8'),{window});
+const window={};for(const file of ['model.js','availability.js','calendar-import.js'])vm.runInNewContext(fs.readFileSync(file,'utf8'),{window});
 const C=window.TokiCalendarImport;
 const period=(start='2026-10-03T08:00',end='2026-10-04T00:00')=>C.period(start,end);
 const busy=(start,end)=>({start:Date.parse(start),end:Date.parse(end)});
@@ -48,7 +48,7 @@ test('replacement splits boundary events and preserves other people, groups and 
   const ownEvents=result.board.events.filter(e=>e.person===0&&e.date==='2026-10-03');
   assert.deepEqual(own(ownEvents.map(e=>[e.start,e.end])),[[540,610],[770,840],[630,750]]);
   assert.equal(ownEvents[0].detail,'保持する詳細');assert.equal(ownEvents[1].detail,'保持する詳細');
-  assert.equal(ownEvents[2].title,'参加可能');assert.equal(ownEvents[2].detail,'');assert.ok(window.TokiModel.valid(result.board));
+  assert.equal(ownEvents[2].title,'可能時間');assert.equal(ownEvents[2].detail,'');assert.ok(window.TokiModel.valid(result.board));
 });
 test('fully busy import removes only the chosen period and supports an empty preview',()=>{
   const result=C.plan(board(),0,period(),[busy('2026-10-03T00:00:00+09:00','2026-10-04T00:00:00+09:00')],()=> 'unused');
@@ -62,4 +62,11 @@ test('reimport replaces previous generated ranges instead of accumulating duplic
 test('import refuses to exceed the shared board event limit',()=>{
   const original=board();original.events=Array.from({length:2000},(_,i)=>event(`existing-${i}`,1,540,600));
   assert.throws(()=>C.plan(original,0,period(),[],()=> 'extra'),/2000/);
+});
+test('import keeps existing MTG and excludes its time from availability without creating title fields',()=>{
+  const original={schemaVersion:4,people:['A','B'],groups:[{id:'g',name:'Team',members:[0,1]}],events:[],meetings:[{id:'mtg',group:'g',members:[0,1],date:'2026-10-03',start:660,end:720}]};let serial=0;
+  const result=C.plan(original,0,period('2026-10-03T10:00','2026-10-03T13:00'),[],()=>`new-${++serial}`);
+  assert.deepEqual(own(result.board.meetings),original.meetings);
+  assert.deepEqual(own(result.ranges),[{date:'2026-10-03',start:600,end:660},{date:'2026-10-03',start:720,end:780}]);
+  assert.ok(result.board.events.every(e=>e.person===0&&!Object.hasOwn(e,'title')&&!Object.hasOwn(e,'detail')));assert.ok(window.TokiModel.valid(result.board));
 });

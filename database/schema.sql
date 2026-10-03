@@ -38,12 +38,13 @@ declare item jsonb; person_name jsonb; grp jsonb; member jsonb;
 begin
   if jsonb_typeof(new.payload) is distinct from 'object'
     or jsonb_typeof(new.payload->'people') is distinct from 'array'
-    or new.payload->'schemaVersion' is distinct from '3'::jsonb
+    or new.payload->'schemaVersion' is distinct from '4'::jsonb
     or jsonb_typeof(new.payload->'groups') is distinct from 'array'
-    or jsonb_typeof(new.payload->'events') is distinct from 'array' then
+    or jsonb_typeof(new.payload->'events') is distinct from 'array'
+    or jsonb_typeof(new.payload->'meetings') is distinct from 'array' then
     raise exception 'Invalid schedule structure';
   end if;
-  if jsonb_array_length(new.payload->'people') not between 0 and 100 or jsonb_array_length(new.payload->'groups') > 50 or jsonb_array_length(new.payload->'events') > 2000 then
+  if jsonb_array_length(new.payload->'people') not between 0 and 100 or jsonb_array_length(new.payload->'groups') > 50 or jsonb_array_length(new.payload->'events') > 2000 or jsonb_array_length(new.payload->'meetings') > 2000 then
     raise exception 'Invalid schedule size';
   end if;
   for person_name in select value from jsonb_array_elements(new.payload->'people') loop
@@ -70,7 +71,7 @@ begin
     if jsonb_typeof(item) <> 'object'
       or jsonb_typeof(item->'id') is distinct from 'string'
       or length(item->>'id') not between 1 and 100
-      or (item ? 'person') = (item ? 'group')
+      or not (item ? 'person') or (item ? 'group') or (item ? 'title') or (item ? 'detail')
       or ((item ? 'person') and (jsonb_typeof(item->'person') is distinct from 'number' or (item->>'person') !~ '^[0-9]+$' or (item->>'person')::integer not between 0 and jsonb_array_length(new.payload->'people')-1))
       or ((item ? 'group') and (jsonb_typeof(item->'group') is distinct from 'string' or not exists(select 1 from jsonb_array_elements(new.payload->'groups') g where g->>'id'=item->>'group')))
       or jsonb_typeof(item->'date') is distinct from 'string'
@@ -79,11 +80,7 @@ begin
       or jsonb_typeof(item->'end') is distinct from 'number'
       or (item->>'start') !~ '^[0-9]+$' or (item->>'end') !~ '^[0-9]+$'
       or (item->>'start')::integer < 480 or (item->>'end')::integer > 1440
-      or (item->>'end')::integer <= (item->>'start')::integer
-      or jsonb_typeof(item->'title') is distinct from 'string'
-      or length(item->>'title') not between 1 and 100
-      or jsonb_typeof(item->'detail') is distinct from 'string'
-      or length(item->>'detail') > 2000 then
+      or (item->>'end')::integer <= (item->>'start')::integer then
       raise exception 'Invalid event';
     end if;
     begin
@@ -94,6 +91,25 @@ begin
   if (select count(*) <> count(distinct value->>'id') from jsonb_array_elements(new.payload->'events')) then
     raise exception 'Duplicate event IDs';
   end if;
+  for item in select value from jsonb_array_elements(new.payload->'meetings') loop
+    if jsonb_typeof(item) is distinct from 'object'
+      or jsonb_typeof(item->'id') is distinct from 'string' or length(item->>'id') not between 1 and 100
+      or jsonb_typeof(item->'group') is distinct from 'string' or not exists(select 1 from jsonb_array_elements(new.payload->'groups') g where g->>'id'=item->>'group')
+      or jsonb_typeof(item->'date') is distinct from 'string' or (item->>'date') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+      or jsonb_typeof(item->'start') is distinct from 'number' or jsonb_typeof(item->'end') is distinct from 'number'
+      or (item->>'start') !~ '^[0-9]+$' or (item->>'end') !~ '^[0-9]+$'
+      or (item->>'start')::integer < 480 or (item->>'end')::integer > 1440 or (item->>'end')::integer <= (item->>'start')::integer
+      or jsonb_typeof(item->'members') is distinct from 'array' then raise exception 'INVALID'; end if;
+    if jsonb_array_length(item->'members')=0 then raise exception 'INVALID'; end if;
+    begin
+      if (item->>'date')::date not between date '0001-01-07' and date '9999-12-25' then raise exception 'INVALID'; end if;
+    exception when invalid_datetime_format or datetime_field_overflow then raise exception 'INVALID'; end;
+    for member in select value from jsonb_array_elements(item->'members') loop
+      if jsonb_typeof(member)<>'number' or (member#>>'{}') !~ '^[0-9]+$' or (member#>>'{}')::integer not between 0 and jsonb_array_length(new.payload->'people')-1 then raise exception 'INVALID'; end if;
+    end loop;
+    if (select count(*)<>count(distinct value) from jsonb_array_elements(item->'members')) then raise exception 'INVALID'; end if;
+  end loop;
+  if (select count(*)<>count(distinct value->>'id') from jsonb_array_elements((new.payload->'events')||(new.payload->'meetings'))) then raise exception 'INVALID'; end if;
   if TG_OP = 'UPDATE' then
     new.version := old.version + 1;
   else
@@ -125,16 +141,22 @@ begin
   if p_token is null or p_token !~ '^[a-f0-9]{64}$' then raise exception 'LINK'; end if;
   select l.board_id into board_id from toki_private.share_links l where l.token_hash=sha256(convert_to(p_token,'UTF8'));
   if board_id is null then raise exception 'LINK'; end if;
-  if p_action in ('join','save','save_grouped') then raise exception 'UPDATE_REQUIRED'; end if;
-  if p_action='save_calendar' then
+  if p_action in ('join','save','save_grouped','save_calendar') then raise exception 'UPDATE_REQUIRED'; end if;
+  if p_action='save_availability' then
     select * into board from public.toki_boards b where b.id=board_id for update;
     if p_version is distinct from board.version then raise exception 'CONFLICT'; end if;
-    if p_payload->'schemaVersion' is distinct from '3'::jsonb then raise exception 'INVALID'; end if;
+    if p_payload->'schemaVersion' is distinct from '4'::jsonb then raise exception 'INVALID'; end if;
     update public.toki_boards set payload=p_payload where id=board.id returning * into board;
-  elsif p_action='read' then
+  elsif p_action in ('read','read_availability') then
     select * into board from public.toki_boards b where b.id=board_id;
   else raise exception 'INVALID'; end if;
   if board.id is null then raise exception 'LINK'; end if;
+  -- Old installed pages can still load far enough to show the PWA update button.
+  -- Their save endpoint is rejected above, so they cannot overwrite MTG records.
+  if p_action='read' then
+    board.payload := (board.payload - 'meetings') || jsonb_build_object('schemaVersion',3,
+      'events',coalesce((select jsonb_agg(e || jsonb_build_object('title','可能時間','detail','')) from jsonb_array_elements(board.payload->'events') e),'[]'::jsonb));
+  end if;
   return jsonb_build_object('payload',board.payload,'version',board.version);
 end;
 $$;
@@ -150,8 +172,13 @@ create or replace function public.toki_share(
 $$;
 revoke all on function public.toki_share(text,text,uuid,text,jsonb,bigint) from public, anon, authenticated;
 grant execute on function public.toki_share(text,text,uuid,text,jsonb,bigint) to anon, authenticated;
--- Preserve all existing schedules while upgrading their format once.
-update public.toki_boards set payload=(payload - 'dates') || jsonb_build_object('schemaVersion',3,'groups',coalesce(payload->'groups','[]'::jsonb))
-  where payload->'schemaVersion' is distinct from '3'::jsonb;
+-- One-time conversion: keep all individual intervals; group rows become derived views.
+-- Old free-text titles/details and independent group slots are intentionally removed.
+update public.toki_boards b set payload=jsonb_build_object(
+  'schemaVersion',4,'people',payload->'people','groups',coalesce(payload->'groups','[]'::jsonb),
+  'events',coalesce((select jsonb_agg(jsonb_build_object('id',e->'id','person',e->'person','date',e->'date','start',e->'start','end',e->'end') order by ordinal)
+    from jsonb_array_elements(b.payload->'events') with ordinality as entries(e,ordinal) where e ? 'person'),'[]'::jsonb),
+  'meetings','[]'::jsonb)
+  where payload->'schemaVersion' is distinct from '4'::jsonb;
 notify pgrst, 'reload schema';
 commit;
