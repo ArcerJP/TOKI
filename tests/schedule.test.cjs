@@ -11,6 +11,30 @@ test('converting a common segment to MTG edits only selected people, and updates
   assert.deepEqual(S.personRanges(next,2,date),[r(720,960)]);assert.deepEqual(S.ranges(next,'g:h',date),[r(660,1020)]);
   assert.equal(b.meetings.length,0);assert.throws(()=>S.reserve(b,'g',date,[r(600,660)],[],id),/共通/);
 });
+test('a group click reserves its 30-minute slot; dragging selects both directions and rejects unavailable edges',()=>{
+  const common=r(600,1020);
+  assert.deepEqual(S.meetingSelection(common,795),r(780,810));
+  assert.deepEqual(S.meetingSelection(common,795,900),r(780,900));
+  assert.deepEqual(S.meetingSelection(common,795,720),r(720,810));
+  assert.deepEqual(S.meetingSelection(common,990,1020),r(990,1020));
+  for(const [origin,cursor] of [[795,1030],[795,590],[795,1021],[599,720],[1020,990]])assert.throws(()=>S.meetingSelection(common,origin,cursor),{message:'⚠️可能時間がありません'});
+  assert.throws(()=>S.meetingSelection(r(610,770),615),/可能時間がありません/);
+  assert.throws(()=>S.meetingSelection(r(610,770),760),/可能時間がありません/);
+});
+test('a middle reservation splits all target people, preserves excluded people, and fully restores on release',()=>{
+  const b=base(),selection=S.meetingSelection(S.ranges(b,'g:g',date,['C'])[0],795,900);
+  let next=S.reserve(b,'g',date,[selection],['C'],id);
+  assert.deepEqual(next.meetings[0].members,[0,1]);
+  assert.deepEqual(S.ranges(next,'g:g',date,['C']),[r(600,780),r(900,1020)]);
+  assert.deepEqual(S.personRanges(next,0,date),[r(540,780),r(900,1080)]);
+  assert.deepEqual(S.personRanges(next,1,date),[r(600,780),r(900,1020)]);
+  assert.deepEqual(S.personRanges(next,2,date),S.personRanges(b,2,date));
+  const before=structuredClone(next);
+  assert.throws(()=>S.reserve(next,'g',date,[r(750,930)],['C'],id),/共通/);
+  assert.deepEqual(next,before);
+  next=S.release(next,next.meetings[0].id,{},id);
+  for(let p=0;p<3;p++)assert.deepEqual(S.personRanges(next,p,date),S.personRanges(b,p,date));
+});
 test('removing one MTG participant restores only that person, and preserves the original participant set on roster edits',()=>{
   let b=S.reserve(base(),'g',date,[r(720,780)],[],id),meeting=b.meetings[0].id;
   b=M.setGroup(b,'g','企画局',[1,2]);assert.deepEqual(b.meetings[0].members,[0,1,2]);

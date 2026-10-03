@@ -28,6 +28,13 @@
   function movePersonRange(board,person,target,date,from,to,makeId=id){
     let next=editPerson(board,person,date,[from],[],makeId);return editPerson(next,target,date,[],[to],makeId);
   }
+  function meetingSelection(common,origin,cursor=origin){
+    const anchor=Math.floor(origin/30)*30,boundary=Math.round(cursor/30)*30;
+    const start=Math.min(anchor,boundary),end=Math.max(anchor+30,boundary);
+    // Reject out-of-range selections rather than silently clipping a reservation.
+    if(!Number.isFinite(origin)||!Number.isFinite(cursor)||origin<common.start||origin>=common.end||cursor<common.start||cursor>common.end||start<common.start||end>common.end)throw Error('⚠️可能時間がありません');
+    return {start,end};
+  }
   function reserve(board,group,date,removed,excluded=[],makeId=id){
     const next=M.clone(board),members=participants(next,group,excluded),available=ranges(next,`g:${group}`,date,excluded);
     if(!members.length)throw Error('対象のメンバーがいません。');
@@ -76,6 +83,6 @@
       if(key===group)return `hsl(${hue} 55% 35%)`;
     }
   }
-  const api={migrate,participants,personRanges,ranges,editPerson,movePersonRange,reserve,release,removeGroup,exportText,color};
+  const api={migrate,participants,personRanges,ranges,editPerson,movePersonRange,meetingSelection,reserve,release,removeGroup,exportText,color};
   if(node)module.exports=api;else window.TokiSchedule=api;
 })();
