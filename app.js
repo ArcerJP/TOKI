@@ -34,7 +34,8 @@
   try{if(!shared.enabled){const raw=localStorage.getItem(KEY)||localStorage.getItem(LEGACY_KEY);if(raw){const saved=JSON.parse(raw);const board=saved.version===3?saved.board:M.upgrade(saved.version===2?saved.board:{people,dates,events:saved.events});if(!M.valid(board))throw Error("Invalid saved data");assign(board);}}}
   catch{loadFailed=true;$("save-status").textContent="保存データを読めませんでした";}
   function toast(message){$("toast").textContent=message;$("toast").hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$("toast").hidden=true,3500);}
-  function persist(){try{localStorage.setItem(KEY,JSON.stringify({version:3,board:snapshot()}));$("save-status").textContent="このブラウザーに保存済み";}catch{$("save-status").textContent="保存できません（この画面のみ）";toast("自動保存できません。閉じる前にPDF出力してください。");}}
+  function localSaveError(message){lastSaveError=message;$("save-status").textContent="未保存・変更を反映していません";$("roster-error").textContent=message;$("meeting-error").textContent=message;toast(message);return false;}
+  function persist(board){try{localStorage.setItem(KEY,JSON.stringify({version:3,board}));$("save-status").textContent="このブラウザーに保存済み";return true;}catch{return localSaveError("このブラウザーに保存できませんでした。保存領域やブラウザーの設定を確認して、もう一度お試しください。");}}
   const writable=()=>ready&&(!shared.enabled||shared.online);
   const editable=()=>!busy&&writable()&&!rowDrag?.active;
   function setBusy(value){
@@ -67,13 +68,17 @@
     if(!editable())return false;
     if(Array.isArray(next))next={...snapshot(),events:next};
     if(!M.valid(next)){toast("入力内容を確認してください。");return false;}
-    if(!shared.enabled){assign(next);persist();return true;}
+    if(!shared.enabled){
+      if(pendingLocalBoard)return localSaveError("別タブで予定が更新されています。編集画面を閉じ、最新の内容を確認してからもう一度編集してください。");
+      if(!persist(next))return false;
+      assign(next);return true;
+    }
     setBusy(true);$("save-status").textContent="共有先に保存中…";
     try{const saved=await shared.save(next,revision);assign(saved.payload);revision=saved.version;$("save-status").textContent="共有保存済み";return true;}
     catch(error){lastSaveError=error.message;$("save-status").textContent="未保存・最新の予定を確認してください";$("meeting-error").textContent=error.message;$("roster-error").textContent=error.message;toast(error.message);await shared.refresh();return false;}
     finally{setBusy(false);}
   }
-  async function commit(next,message){const before=snapshot();if(!await saveNext(next))return false;undo.push(before);if(undo.length>80)undo.shift();redo=[];render();toast(message);applyPending();return true;}
+  async function commit(next,message){const before=snapshot();if(!await saveNext(next)){applyPending();return false;}undo.push(before);if(undo.length>80)undo.shift();redo=[];render();toast(message);applyPending();return true;}
   async function history(direction){if(!editable())return;const from=direction==="undo"?undo:redo,to=direction==="undo"?redo:undo;if(!from.length)return;const before=snapshot();if(!await saveNext(clone(from.at(-1)))){applyPending();return;}to.push(before);from.pop();render();toast(direction==="undo"?"元に戻しました":"やり直しました");applyPending();}
   function receiveBoard(board){
     if(board.version<=revision)return;
@@ -217,7 +222,7 @@
   let printScope="current";
   $("print-button").onclick=()=>$("print-dialog").showModal();$("close-print").onclick=()=>$("print-dialog").close();
   $("print-form").onsubmit=e=>{e.preventDefault();printScope=$("print-scope").value;buildPrint(printScope);$("print-dialog").close();window.print();};window.addEventListener("beforeprint",()=>buildPrint(printScope));window.addEventListener("afterprint",()=>{printScope="current";});
-  window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===3&&M.valid(saved.board)){if($("google-import-dialog").open||mobile?.editing){pendingLocalBoard=saved.board;mobile?.refresh();return;}if(dialogOpen()||drag||rowDrag?.active){toast("別タブで変更されています。この画面の編集を保存すると上書きされます。");return;}assign(saved.board);undo=[];redo=[];render();toast("別タブの変更を反映しました");}}catch{}});
+  window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===3&&M.valid(saved.board)){pendingLocalBoard=saved.board;mobile?.refresh();if($("google-import-dialog").open||mobile?.editing)return;if(busy||dialogOpen()||drag||rowDrag?.active||meetingMenu?.pressing){toast("別タブで予定が更新されています。操作を終了すると最新の内容を反映します。");return;}applyPending();}}catch{}});
   document.querySelectorAll("dialog").forEach(dialog=>dialog.addEventListener("close",applyPending));
   let rosterKind,rosterId;
   function openRoster(kind,id){

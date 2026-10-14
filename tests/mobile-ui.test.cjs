@@ -115,3 +115,42 @@ test('offline forces scroll mode and blocks writing while retaining copy; save f
   assert.equal(e.d.querySelector('.mob-editor-track').dataset.mode,'scroll');assert.equal(e.button('保存').disabled,true);await e.click('時間をコピー');assert.deepEqual(e.copies,['10月5日(月)：13:00～14:00']);
   await e.offline(false);await e.click('終了を30分遅らせる');e.fail();await e.click('保存');assert.equal(e.$('mobile-editor').open,true);assert.equal(e.saves,0);assert.equal(e.current().meetings[0].end,840);assert.match(e.error,/保存失敗/);
 });
+
+test('desktop local save failure retains the old board and form, and retry saves once',async t=>{
+  const e=await environment(t,{width:1440}),before=JSON.stringify(e.current());
+  const storage=Object.getPrototypeOf(e.w.localStorage),setItem=storage.setItem;
+  storage.setItem=function(key,value){if(key==='toki-availability-v3')throw Error('QuotaExceededError');return setItem.call(this,key,value);};
+  e.$('add-person').click();e.$('roster-name').value='E';
+  const submit=async()=>{e.$('roster-form').dispatchEvent(new e.w.Event('submit',{bubbles:true,cancelable:true}));await flush();};
+  await submit();
+  assert.equal(JSON.stringify(e.current()),before);assert.equal(e.$('roster-dialog').open,true);
+  assert.match(e.$('roster-error').textContent,/保存できません/);assert.match(e.$('save-status').textContent,/未保存/);
+  assert.doesNotMatch(e.$('toast').textContent,/追加しました/);assert.equal(e.$('undo').disabled,true);
+  assert.equal(e.d.querySelectorAll('.person-row[data-person="4"]').length,0);
+  storage.setItem=setItem;await submit();assert.equal(e.$('roster-dialog').open,false);
+  assert.deepEqual(e.current().people,['A','B','C','D','E']);assert.equal(e.$('undo').disabled,false);
+  e.$('undo').click();await flush();assert.equal(JSON.stringify(e.current()),before);
+});
+
+test('desktop local changes arriving during a roster dialog are applied after cancel',async t=>{
+  const e=await environment(t,{width:1440});e.$('add-person').click();await e.localUpdate();e.$('cancel-roster').click();await flush();
+  assert.equal(e.d.querySelector('[data-person="0"] .row-name').textContent,'A更新');
+  e.$('add-person').click();e.$('roster-name').value='E';e.$('roster-form').dispatchEvent(new e.w.Event('submit',{bubbles:true,cancelable:true}));await flush();
+  assert.deepEqual(e.current().people,['A更新','B','C','D','E']);
+});
+
+test('desktop local stale submissions cannot overwrite updates received while editing',async t=>{
+  const e=await environment(t,{width:1440});e.d.querySelector('[data-person="0"] .row-name').click();e.$('roster-name').value='stale';await e.localUpdate();
+  e.$('roster-form').dispatchEvent(new e.w.Event('submit',{bubbles:true,cancelable:true}));await flush();
+  assert.equal(e.current().people[0],'A更新');assert.equal(e.$('roster-dialog').open,true);assert.match(e.$('roster-error').textContent,/別タブ/);
+  e.$('cancel-roster').click();await flush();assert.equal(e.d.querySelector('[data-person="0"] .row-name').textContent,'A更新');
+});
+
+test('desktop drag cannot overwrite a local update and adopts it after release',async t=>{
+  const e=await environment(t,{width:1440}),track=e.d.querySelector('.timeline[data-row="p:3"]');
+  track.getBoundingClientRect=()=>({left:0,width:960,top:0,height:30,right:960,bottom:30});
+  const fire=(target,type,x)=>{const event=new e.w.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:15});Object.assign(event,{pointerId:1});target.dispatchEvent(event);};
+  fire(track,'pointerdown',120);fire(e.d,'pointermove',180);await e.localUpdate();fire(e.d,'pointerup',180);await flush();
+  assert.equal(e.current().people[0],'A更新');assert.deepEqual(S.personRanges(e.current(),3,date),[]);
+  assert.equal(e.d.querySelector('[data-person="0"] .row-name').textContent,'A更新');
+});
