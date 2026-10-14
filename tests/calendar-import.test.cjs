@@ -34,9 +34,15 @@ test('invalid dates, empty/reversed periods and overly long requests are rejecte
 });
 test('FreeBusy response errors and incomplete data never imply all-day availability',()=>{
   const range=period(),response={timeMin:range.start,timeMax:range.end,calendars:{primary:{busy:[]}}};
-  assert.equal(C.readBusy(response,range).length,0);
-  assert.equal(C.readBusy({...response,calendars:{'resolved-primary-id':{busy:[]}}},range).length,0);
-  for(const value of [{...response,calendars:{}},{...response,calendars:{primary:{busy:[],errors:[{reason:'notFound'}]}}},{...response,calendars:{primary:{}}},{...response,timeMax:range.start},{...response,calendars:{primary:{busy:[{start:'bad',end:'bad'}]}}}])assert.throws(()=>C.readBusy(value,range));
+  assert.equal(C.readBusy(response,range,['primary']).length,0);
+  for(const value of [{...response,calendars:{}},{...response,calendars:{unexpected:{busy:[]}}},{...response,calendars:{primary:{busy:[],errors:[{reason:'notFound'}]}}},{...response,calendars:{primary:{}}},{...response,timeMax:range.start},{...response,calendars:{primary:{busy:[{start:'bad',end:'bad'}]}}}])assert.throws(()=>C.readBusy(value,range,['primary']));
+});
+
+test('multi-calendar union excludes overlaps and five-minute events from every selected calendar',()=>{
+  const range=period('2026-10-03T09:00','2026-10-03T14:00'),response={timeMin:range.start,timeMax:range.end,calendars:{a:{busy:[{start:'2026-10-03T11:10:00+09:00',end:'2026-10-03T11:50:00+09:00'}]},b:{busy:[{start:'2026-10-03T11:30:00+09:00',end:'2026-10-03T12:05:00+09:00'}]},c:{busy:[]}}};
+  assert.deepEqual(own(C.availability(range,C.readBusy(response,range,['a','b','c']))),[{date:'2026-10-03',start:540,end:660},{date:'2026-10-03',start:750,end:840}]);
+  for(const calendars of [{a:response.calendars.a,b:response.calendars.b},{...response.calendars,c:{errors:[{reason:'notFound'}],busy:[]}},{...response.calendars,c:{busy:null}}])assert.throws(()=>C.readBusy({...response,calendars},range,['a','b','c']));
+  assert.throws(()=>C.readBusy(response,range,[]));
 });
 const event=(id,person,start,end,date='2026-10-03')=>({id,person,date,start,end,title:'元の予定',detail:'保持する詳細'});
 function board(){return {schemaVersion:3,people:['A','B'],groups:[{id:'g',name:'グループ',members:[0]}],events:[event('target',0,540,840),event('other',1,540,840),{id:'group',group:'g',date:'2026-10-03',start:600,end:900,title:'グループ予定',detail:''},event('outside',0,540,600,'2026-10-04')]};}

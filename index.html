@@ -405,7 +405,7 @@
         </button>
       </div>
       <p class="import-help">
-        メインカレンダーの「予定あり」の時間帯だけを取得します。予定のタイトル・詳細・場所は取得しません。
+        選択したカレンダーの「予定あり」の時間帯をまとめて確認します。予定のタイトル・詳細・場所は取得しません。
       </p>
       <label for="google-import-person">取り込み先の人</label
       ><select id="google-import-person"></select>
@@ -443,6 +443,9 @@
             Google側で「空き時間」に設定した予定は、空き時間として扱います。
           </li>
           <li>
+            選択したカレンダーのどれかに予定があれば、その時間は除外します。共有カレンダーには他の人の予定も含まれるため、不要なカレンダーはチェックを外してください。
+          </li>
+          <li>
             選んだ人の指定期間内の予定を置き換えます。期間外・他の人・MTGは保持します。MTGと重なる時間は除外し、所属グループの共通時間も再計算します。
           </li>
           <li>
@@ -455,6 +458,21 @@
         ><button type="button" id="google-logout" hidden>ログアウト</button
         ><span id="google-login-status" role="status"></span>
       </div>
+      <section id="google-calendars" hidden aria-labelledby="google-calendars-title">
+        <div class="google-calendar-heading">
+          <h3 id="google-calendars-title">取り込むカレンダー</h3>
+          <button type="button" id="google-calendars-refresh">一覧を再取得</button>
+        </div>
+        <p class="import-help">初期状態は全選択です。不要なカレンダーはチェックを外してください。ToDoリストの取り込みは対象外です。</p>
+        <fieldset id="google-calendar-options" disabled>
+          <legend class="sr-only">取り込むカレンダーの選択</legend>
+          <div class="google-calendar-selection">
+            <label class="google-calendar-choice"><input type="checkbox" id="google-calendars-all" /><span>全選択</span></label>
+            <span id="google-calendar-count" role="status"></span>
+          </div>
+          <div id="google-calendar-list"></div>
+        </fieldset>
+      </section>
       <button type="button" id="google-preview-button" class="primary" disabled>
         空き時間を確認
       </button>

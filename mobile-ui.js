@@ -74,7 +74,7 @@ window.TokiMobileUI = function (bridge) {
       content.append(el('p','mob-note','表示グループのチェックは書き出しに影響しません。MTG書き出しは全グループが初期選択されます。'));
     }else{
       content.append(el('h1',null,'その他'));
-      actionCard('Googleカレンダーから取り込む','メインカレンダーの空き時間だけを反映','google-import-button');
+      actionCard('Googleカレンダーから取り込む','選択したカレンダーの共通の空き時間を反映','google-import-button');
       if(!$('copy-link').hidden)actionCard('共有URLをコピー','同じ予定表をほかの端末で開く','copy-link');
       const history=el('div','mob-actions');for(const [id,name] of [['undo','↶ 元に戻す'],['redo','↷ やり直す']]){const b=button(name,()=>openShared(id));b.disabled=$(id).disabled;history.append(b);}content.append(history);
       if(!$('install-app').hidden)actionCard('アプリをインストール','ホーム画面から開く','install-app');

@@ -25,16 +25,19 @@
     if(!Number.isFinite(ms)||!Number.isFinite(wall)||new Date(wall).toISOString().slice(0,19)!==value.slice(0,19))throw Error('Googleから取得した時間帯を確認できませんでした。');
     return ms;
   }
-  function readBusy(response,range){
+  function readBusy(response,range,calendarIds){
     if(!response||timestamp(response.timeMin)!==range.timeMin||timestamp(response.timeMax)!==range.timeMax)throw Error('取得期間を確認できませんでした。もう一度取得してください。');
-    // Only one calendar was requested; its identifier is not needed for availability.
-    const calendars=response.calendars&&typeof response.calendars==='object'?Object.values(response.calendars):[];
-    const calendar=calendars.length===1?calendars[0]:null;
-    if(!calendar||calendar.errors!==undefined&&(!Array.isArray(calendar.errors)||calendar.errors.length)||!Array.isArray(calendar.busy))throw Error('メインカレンダーの予定あり／なしを取得できませんでした。権限を確認して再取得してください。');
-    return calendar.busy.map(interval=>{
-      const start=timestamp(interval?.start),end=timestamp(interval?.end);
-      if(end<=start)throw Error('Googleから取得した時間帯が正しくありません。');
-      return {start,end};
+    // Require a complete response for exactly the selected IDs. Partial success is unsafe.
+    const calendars=response.calendars;
+    if(!Array.isArray(calendarIds)||!calendarIds.length||new Set(calendarIds).size!==calendarIds.length||!calendars||Array.isArray(calendars)||typeof calendars!=='object'||Object.keys(calendars).length!==calendarIds.length)throw Error('選択したカレンダーすべての応答を確認できませんでした。もう一度取得してください。');
+    return calendarIds.flatMap(id=>{
+      const calendar=Object.hasOwn(calendars,id)?calendars[id]:null;
+      if(!calendar||calendar.errors!==undefined&&(!Array.isArray(calendar.errors)||calendar.errors.length)||!Array.isArray(calendar.busy))throw Error('選択したカレンダーの一部を取得できませんでした。閲覧権限を確認するか、対象カレンダーを選び直してください。');
+      return calendar.busy.map(interval=>{
+        const start=timestamp(interval?.start),end=timestamp(interval?.end);
+        if(end<=start)throw Error('Googleから取得した時間帯が正しくありません。');
+        return {start,end};
+      });
     });
   }
   function availability(range,busy){

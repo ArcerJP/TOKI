@@ -1,19 +1,26 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const source=fs.readFileSync('google-calendar.js','utf8'),scope='https://www.googleapis.com/auth/calendar.freebusy';
+const source=fs.readFileSync('google-calendar.js','utf8'),scopes=['https://www.googleapis.com/auth/calendar.calendarlist.readonly','https://www.googleapis.com/auth/calendar.events.freebusy'];
+const range={start:'2026-10-03T08:00:00+09:00',end:'2026-10-04T00:00:00+09:00',timeMin:Date.parse('2026-10-03T08:00:00+09:00'),timeMax:Date.parse('2026-10-04T00:00:00+09:00')};
 function environment(){
-  let config,status=200,response={},access={access_token:'private-token',expires_in:3600},now=1000,granted=true,popupError=null;const calls=[];
-  const window={TOKI_CONFIG:{googleClientId:'123456-example.apps.googleusercontent.com'},TokiCalendarImport:{readBusy:data=>data},google:{accounts:{oauth2:{initTokenClient:value=>{config=value;return {requestAccessToken(){queueMicrotask(()=>popupError?value.error_callback({type:popupError}):value.callback(access));}};},hasGrantedAllScopes:()=>granted}}}};
-  vm.runInNewContext(source,{window,location:{protocol:'https:'},Date:{now:()=>now},AbortController,setTimeout,clearTimeout,fetch:async(url,options)=>{calls.push({url,options});return {ok:status===200,status,json:async()=>response};}});
-  return {api:window.TokiGoogleCalendar,calls,get config(){return config;},setStatus:n=>status=n,setAccess:a=>access=a,expire:()=>now+=3600000,setGranted:v=>granted=v,setPopupError:v=>popupError=v};
+  let config,status=200,handler,access={access_token:'private-token',expires_in:3600},now=1000,granted=true,popupError=null,scopeChecks=[];const calls=[];
+  const window={TOKI_CONFIG:{googleClientId:'123456-example.apps.googleusercontent.com'},google:{accounts:{oauth2:{initTokenClient:value=>{config=value;return {requestAccessToken(){queueMicrotask(()=>popupError?value.error_callback({type:popupError}):value.callback(access));}};},hasGrantedAllScopes:(response,...requested)=>{scopeChecks=requested;return granted;}}}}};
+  vm.runInNewContext(fs.readFileSync('calendar-import.js','utf8'),{window});
+  vm.runInNewContext(source,{window,location:{protocol:'https:'},Date:class extends Date{static now(){return now;}},URLSearchParams,AbortController,setTimeout,clearTimeout,fetch:async(url,options)=>{
+    calls.push({url,options});if(options.signal.aborted)throw Object.assign(Error(),{name:'AbortError'});
+    const body=options.body?JSON.parse(options.body):null;
+    const response=handler?await handler(url,options):body?{timeMin:body.timeMin,timeMax:body.timeMax,calendars:Object.fromEntries(body.items.map(({id})=>[id,{busy:[]}]))}:{items:[]};
+    return {ok:status===200,status,json:async()=>response};
+  }});
+  return {api:window.TokiGoogleCalendar,calls,get config(){return config;},get scopeChecks(){return scopeChecks;},respond:fn=>handler=fn,setStatus:n=>status=n,setAccess:a=>access=a,expire:()=>now+=3600000,setGranted:v=>granted=v,setPopupError:v=>popupError=v};
 }
-test('Google is the only login provider and requests only free/busy permission',async()=>{
-  const e=environment();await e.api.login();assert.equal(e.config.scope,scope);assert.equal(e.config.include_granted_scopes,false);assert.equal(e.api.connected,true);
+test('Google requests and verifies only calendar-list and accessible-calendar free/busy scopes',async()=>{
+  const e=environment();await e.api.login();assert.equal(e.config.scope,scopes.join(' '));assert.deepEqual(e.scopeChecks,scopes);assert.equal(e.config.include_granted_scopes,false);assert.equal(e.api.connected,true);
 });
-test('only the exact requested range and primary calendar are sent to FreeBusy',async()=>{
-  const e=environment();await e.api.login();const range={start:'2026-10-03T08:00:00+09:00',end:'2026-10-04T00:00:00+09:00'};await e.api.fetchBusy(range);
+test('only the exact range and selected calendars are sent to FreeBusy, with no event read or Tasks calls',async()=>{
+  const e=environment();await e.api.login();await e.api.fetchBusy(range,['personal','shared']);
   const {url,options}=e.calls[0];assert.match(url,/calendar\/v3\/freeBusy\?/);assert.ok(!url.includes('private-token'));
   assert.equal(options.headers.Authorization,'Bearer private-token');assert.equal(options.cache,'no-store');assert.equal(options.credentials,'omit');assert.equal(options.referrerPolicy,'no-referrer');
-  assert.deepEqual(JSON.parse(options.body),{timeMin:range.start,timeMax:range.end,timeZone:'Asia/Tokyo',calendarExpansionMax:1,items:[{id:'primary'}]});
+  assert.deepEqual(JSON.parse(options.body),{timeMin:range.start,timeMax:range.end,timeZone:'Asia/Tokyo',calendarExpansionMax:2,items:[{id:'personal'},{id:'shared'}]});
 });
 test('permission denial, expired credentials and logout prevent Calendar requests',async()=>{
   const e=environment();e.setGranted(false);await assert.rejects(e.api.login());assert.equal(e.api.connected,false);
@@ -21,8 +28,41 @@ test('permission denial, expired credentials and logout prevent Calendar request
   await e.api.login();e.api.logout();assert.equal(e.api.connected,false);await assert.rejects(e.api.fetchBusy({}));
 });
 test('401 clears credentials and 403 is reported instead of returning empty busy data',async()=>{
-  const a=environment();await a.api.login();a.setStatus(401);await assert.rejects(a.api.fetchBusy({}));assert.equal(a.api.connected,false);
-  const b=environment();await b.api.login();b.setStatus(403);await assert.rejects(b.api.fetchBusy({}));
+  const a=environment();await a.api.login();a.setStatus(401);await assert.rejects(a.api.fetchBusy(range,['a']));assert.equal(a.api.connected,false);
+  const b=environment();await b.api.login();b.setStatus(403);await assert.rejects(b.api.fetchBusy(range,['a']),/両方を許可/);
+});
+
+test('calendar listing follows every page, includes hidden calendars and keeps only display metadata',async()=>{
+  const e=environment();await e.api.login();
+  e.respond(url=>new URL(url).searchParams.has('pageToken')?{items:[{id:'mine',summary:'個人',primary:true,accessRole:'owner'},{id:'shared',summary:'共有',summaryOverride:'局A',accessRole:'reader',description:'discard'}]}:{nextPageToken:'next+/=&',items:[{id:'hidden',summary:'非表示',accessRole:'freeBusyReader'}]});
+  const result=structuredClone(await e.api.listCalendars());assert.equal(result.length,3);assert.equal(result[0].id,'mine');assert.deepEqual(result.find(c=>c.id==='shared'),{id:'shared',name:'局A',primary:false});
+  for(const {url,options} of e.calls){const parsed=new URL(url);assert.equal(parsed.pathname,'/calendar/v3/users/me/calendarList');assert.equal(parsed.searchParams.get('showHidden'),'true');assert.equal(parsed.searchParams.get('minAccessRole'),'freeBusyReader');assert.equal(options.method,'GET');assert.equal(options.body,undefined);assert.equal(options.cache,'no-store');assert.ok(!parsed.searchParams.get('fields').includes('description'));}
+  assert.equal(new URL(e.calls[1].url).searchParams.get('pageToken'),'next+/=&');
+});
+
+test('failed or malformed later pages never return a partial calendar list',async()=>{
+  for(const failure of ['request','repeat','invalid']){
+    const e=environment();await e.api.login();
+    e.respond(url=>{if(new URL(url).searchParams.has('pageToken')){if(failure==='request'){e.setStatus(403);return {};}if(failure==='repeat')return {nextPageToken:'next',items:[]};return {items:[{id:null}]};}return {nextPageToken:'next',items:[{id:'a',summary:'A',accessRole:'owner'}]};});
+    await assert.rejects(e.api.listCalendars());assert.equal(e.calls.length,2);
+  }
+});
+
+test('more than 50 selected calendars are batched without skipping or duplicating IDs',async()=>{
+  const e=environment();await e.api.login();const ids=Array.from({length:101},(_,i)=>'calendar-'+i);
+  assert.equal((await e.api.fetchBusy(range,[...ids,ids[0]])).length,0);
+  const batches=e.calls.map(c=>JSON.parse(c.options.body));assert.deepEqual(batches.map(b=>b.calendarExpansionMax),[50,50,1]);assert.deepEqual(batches.flatMap(b=>b.items.map(x=>x.id)),ids);
+});
+
+test('an error or missing calendar in a later batch rejects the whole import',async()=>{
+  const e=environment();await e.api.login();e.respond((url,options)=>{const body=JSON.parse(options.body);return {timeMin:body.timeMin,timeMax:body.timeMax,calendars:Object.fromEntries(body.items.map(({id})=>[id,id==='c50'?{errors:[{reason:'notFound'}]}:{busy:[]}]))};});
+  await assert.rejects(e.api.fetchBusy(range,Array.from({length:51},(_,i)=>'c'+i)),/一部/);assert.equal(e.calls.length,2);
+});
+
+test('no selection makes no request; cancellation and account changes discard in-flight results',async()=>{
+  const e=environment();await e.api.login();await assert.rejects(e.api.fetchBusy(range,[]),/1つ以上/);assert.equal(e.calls.length,0);
+  const controller=new AbortController();controller.abort();await assert.rejects(e.api.listCalendars(controller.signal),/中止/);
+  e.respond(()=>{e.api.logout();return {items:[]};});await assert.rejects(e.api.listCalendars(),/変更/);assert.equal(e.api.connected,false);
 });
 test('access_denied explains test-user registration and allows a clean retry',async()=>{
   const e=environment();e.setAccess({error:'access_denied',error_description:'untrusted response'});
