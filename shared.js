@@ -89,6 +89,15 @@
   async function initialize(callbacks){
     Object.assign(hooks,callbacks);if(!enabled||initialized)return;initialized=true;
     if(!config?.url||!config?.publishableKey)throw error(messages.CONFIG,'CONFIG');
+    const query=new URLSearchParams(location.search),fragment=new URLSearchParams(location.hash.slice(1));
+    const callbackKeys=['error','error_code','error_description'];
+    const callbackFailure=callbackKeys.some(key=>query.has(key)||fragment.has(key));
+    // Provider error descriptions may contain parts of an authorization code.
+    // Report a safe message, and do not keep the failed callback in the address bar.
+    if(callbackFailure){
+      for(const key of [...callbackKeys,'sb']){query.delete(key);fragment.delete(key);}
+      history.replaceState(null,'',location.pathname+(query.size?'?'+query:'')+(fragment.size?'#'+fragment:''));
+    }
     remove('toki-offline-v1:'+config.boardId);remove('toki-participant-v2:'+config.boardId);
     if(location.hash.startsWith('#share='))history.replaceState(null,'',location.pathname+location.search);
     await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='vendor/supabase.js';script.onload=resolve;script.onerror=()=>reject(error('認証機能を読み込めません。再読み込みしてください。','LOAD'));document.head.append(script);});
@@ -101,7 +110,10 @@
       else if(session?.user.id!==user?.id)setTimeout(()=>loadAccount(session).catch(failed),0);
     });
     const {data,error:authError}=await client.auth.getSession();booting=false;
-    if(data?.session)await loadAccount(data.session);
+    if(callbackFailure||authError&&!networkFailure(authError,authError.status)){
+      state();emit('error',error('Googleログインを完了できませんでした。もう一度ログインしてください。繰り返す場合は、管理者にGoogle認証の設定を確認してもらってください。','OAUTH'));
+    }
+    else if(data?.session)await loadAccount(data.session);
     else if(navigator.onLine===false||authError&&networkFailure(authError,authError.status)){
       const saved=read(PROFILE);if(saved?.id&&saved?.email){user=saved;await loadAccount({user:saved});}else state();
     }else state();

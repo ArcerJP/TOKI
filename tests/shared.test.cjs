@@ -1,11 +1,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const payload=()=>({schemaVersion:4,people:['Member'],groups:[],events:[],meetings:[]});
 const choices=()=>['a','b'].map(id=>({id,name:'Company '+id,code:id.repeat(32),role:'member',status:'active'}));
-function environment({storage=new Map(),identity='u1',offline=false}={}){
+function environment({storage=new Map(),identity='u1',offline=false,search='',hash='',authError=null}={}){
   let failure=null,callback,handler;const calls=[],boards=[],resets=[],errors=[],states=[],accounts=[],listeners={},navigator={onLine:!offline};
   const store={a:{companyId:'a',payload:payload(),version:1},b:{companyId:'b',payload:{...payload(),people:['Other company']},version:1}};
   const session=()=>identity?{user:{id:identity,email:identity+'@example.com'}}:null;
-  const client={auth:{onAuthStateChange:fn=>callback=fn,getSession:async()=>({data:{session:session()}}),signInWithOAuth:async args=>{calls.push({oauth:args});return {};},signOut:async()=>{identity=null;callback('SIGNED_OUT',null);return {};}},async rpc(name,args){
+  const client={auth:{onAuthStateChange:fn=>callback=fn,getSession:async()=>({data:{session:session()},error:authError}),signInWithOAuth:async args=>{calls.push({oauth:args});return {};},signOut:async()=>{identity=null;callback('SIGNED_OUT',null);return {};}},async rpc(name,args){
     calls.push({name,args});if(handler)return handler(name,args);
     if(failure)return {status:failure==='NETWORK'?0:400,error:{message:failure}};
     if(args.p_action==='list')return {data:choices()};
@@ -16,9 +16,23 @@ function environment({storage=new Map(),identity='u1',offline=false}={}){
   const window={TOKI_CONFIG:{url:'https://example.supabase.co',publishableKey:'public-test',boardId:'october-2026',siteUrl:'https://example.test/'},TokiSupabase:{createClient:()=>client},addEventListener:(type,fn)=>listeners[type]=fn};
   vm.runInNewContext(fs.readFileSync('model.js','utf8'),{window});
   const document={hidden:false,createElement:()=>({}),head:{append:s=>queueMicrotask(()=>s.onload())},addEventListener(){}};
-  vm.runInNewContext(fs.readFileSync('shared.js','utf8'),{window,document,navigator,localStorage,location:{protocol:'https:',hostname:'example.test',search:'',hash:'',pathname:'/'},history:{replaceState(){}},URLSearchParams,setInterval:()=>0,setTimeout});
-  return {api:window.TokiShared,calls,boards,resets,errors,states,accounts,storage,store,navigator,listeners,init:()=>window.TokiShared.initialize({board:b=>boards.push(b),reset:()=>resets.push(1),error:e=>errors.push(e),state:s=>states.push(s),account:a=>accounts.push(a)}),fail:x=>failure=x,handle:fn=>handler=fn,async changeUser(id){identity=id;callback('SIGNED_IN',session());await new Promise(r=>setTimeout(r,10));}};
+  const replacedUrls=[];
+  vm.runInNewContext(fs.readFileSync('shared.js','utf8'),{window,document,navigator,localStorage,location:{protocol:'https:',hostname:'example.test',search,hash,pathname:'/'},history:{replaceState:(state,title,url)=>replacedUrls.push(url)},URLSearchParams,setInterval:()=>0,setTimeout});
+  return {api:window.TokiShared,calls,boards,resets,errors,states,accounts,storage,store,navigator,listeners,replacedUrls,init:()=>window.TokiShared.initialize({board:b=>boards.push(b),reset:()=>resets.push(1),error:e=>errors.push(e),state:s=>states.push(s),account:a=>accounts.push(a)}),fail:x=>failure=x,handle:fn=>handler=fn,async changeUser(id){identity=id;callback('SIGNED_IN',session());await new Promise(r=>setTimeout(r,10));}};
 }
+
+test('failed OAuth callbacks show a safe error, clean the URL, and never select a previous account',async()=>{
+  const e=environment({search:'?mode=shared&error=server_error&error_code=unexpected_failure&error_description=private-code',hash:'#company=abc&error=server_error&error_description=private-code&sb=1'});
+  await e.init();assert.equal(e.api.user,null);assert.equal(e.calls.length,0);
+  assert.equal(e.errors[0].code,'OAUTH');assert.ok(e.errors[0].message.includes('Googleログイン'));
+  assert.equal(e.errors[0].message.includes('private-code'),false);
+  assert.equal(e.replacedUrls[0],'/?mode=shared#company=abc');
+});
+
+test('SDK authentication errors are visible without exposing their raw message',async()=>{
+  const e=environment({identity:null,authError:{status:400,message:'private-code'}});await e.init();
+  assert.equal(e.errors[0].code,'OAUTH');assert.equal(e.errors[0].message.includes('private-code'),false);assert.equal(e.boards.length,0);
+});
 test('login is required; a sharing link is never used as authorization',async()=>{
   const e=environment({identity:null});await e.init();assert.equal(e.calls.length,0);await assert.rejects(e.api.join('a'),x=>x.code==='AUTH');
   await e.api.login('a');assert.equal(e.calls[0].oauth.provider,'google');assert.equal(e.calls[0].oauth.options.redirectTo,'https://example.test/');assert.equal(e.api.user,null);
