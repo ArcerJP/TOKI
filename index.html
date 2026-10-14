@@ -18,6 +18,7 @@
     />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="mobile.css" />
+    <link rel="stylesheet" href="company.css" />
     <script src="config.js" defer></script>
     <script src="shared.js" defer></script>
     <script src="data.js" defer></script>
@@ -33,6 +34,8 @@
     <script src="google-import-ui.js" defer></script>
     <script src="mobile-model.js" defer></script>
     <script src="mobile-ui.js" defer></script>
+    <script src="group-view.js" defer></script>
+    <script src="company-ui.js" defer></script>
     <script src="app.js" defer></script>
     <script src="pwa.js" defer></script>
   </head>
@@ -45,9 +48,24 @@
           ><strong>TOKI</strong>
         </div>
         <h1>みんなの予定</h1>
-        <p>共有URLから、そのまま予定表を開けます。</p>
+        <p>会社・団体ごとに、可能時間を共有します。</p>
         <p id="auth-message" role="status">共有の予定を確認中…</p>
         <button id="auth-retry" hidden>再読み込み</button>
+        <div id="company-access" hidden>
+          <div class="company-form">
+            <label for="company-code">会社コード</label>
+            <input id="company-code" autocomplete="off" maxlength="64" placeholder="管理者から届いたコード" />
+            <button id="company-login" class="primary">Googleでログイン</button>
+            <button id="company-join" class="primary" hidden>この会社への参加を申請</button>
+          </div>
+          <div id="company-signed-in" hidden>
+            <p id="company-current-user"></p>
+            <div id="company-list"></div>
+            <div class="company-actions"><button id="company-refresh">承認状況を更新</button><button id="company-logout">ログアウト</button></div>
+            <details><summary>新しい会社・団体を作成</summary><div class="company-form"><label for="company-new-name">会社・団体名</label><input id="company-new-name" maxlength="80" /><button id="company-create-button">作成して管理者になる</button></div></details>
+          </div>
+          <p id="company-error" class="error" role="alert"></p>
+        </div>
       </div>
     </section>
     <main class="app" id="schedule-app">
@@ -61,7 +79,7 @@
           <span id="save-status" role="status">このブラウザーに保存</span
           ><button id="install-app" hidden>アプリをインストール</button
           ><button id="update-app" hidden>最新版に更新</button
-          ><button id="copy-link" hidden>共有URLをコピー</button>
+          ><button id="copy-link" hidden>会社URLをコピー</button><button id="company-button" hidden>会社・アカウント</button>
         </div>
       </header>
       <p id="pwa-status" class="connection-notice" role="status" hidden></p>
@@ -102,7 +120,7 @@
           aria-controls="google-import-dialog"
         >
           Googleカレンダーから取り込む</button
-        ><button
+        ><button id="group-view-button" aria-haspopup="dialog">表示グループ ▾</button><button
           id="hint-button"
           class="hint-button"
           aria-haspopup="dialog"
@@ -390,7 +408,25 @@
       </div>
       <label for="share-url">このURLを参加者に送ってください</label
       ><input id="share-url" readonly />
-      <p>URLを知っている人は全員の予定を閲覧・編集できます。</p>
+      <p>Googleログインと管理者の招待・承認が必要です。URLだけでは予定を閲覧できません。</p>
+    </dialog>
+    <dialog id="group-view-dialog" aria-labelledby="group-view-title">
+      <div class="dialog-heading"><h2 id="group-view-title">表示するグループを選択</h2><button id="group-view-close" aria-label="表示グループを閉じる">×</button></div>
+      <p>初回はすべて非表示です。表示したいグループにチェックを入れてください。この端末のPC・スマホ表示に共通で適用します。</p>
+      <p class="import-help">社内の閲覧権限や所属、MTGの対象者、書き出し対象は変わりません。後から追加されたグループも選択するまで非表示です。</p>
+      <label class="group-view-all"><input id="group-view-all" type="checkbox" />すべて選択</label>
+      <div id="group-view-choices" class="group-view-choices"></div>
+      <button id="group-view-apply" class="primary">適用</button>
+    </dialog>
+    <dialog id="company-dialog" aria-labelledby="company-dialog-title">
+      <div class="dialog-heading"><h2 id="company-dialog-title">会社・アカウント</h2><button id="company-dialog-close" aria-label="会社設定を閉じる">×</button></div>
+      <p id="company-dialog-user"></p><p>会社コード：<strong id="company-dialog-code" class="company-code"></strong></p>
+      <div class="company-actions"><button id="company-switch">会社を切り替える</button><button id="company-dialog-logout">ログアウト</button></div>
+      <p class="import-help">ログアウトすると、この利用者の端末に保存した予定を消去します。アクセス停止後も、オフライン端末の保存済みデータは即時には消去できません。</p>
+      <section id="company-admin" hidden><h3>参加者の管理</h3><div id="company-members"></div><h3>メールアドレスで招待</h3>
+        <p class="import-help">登録したGoogleアカウントでログインすると参加できます。有効期間は7日間。メールは自動送信されません。会社URLを別途伝えてください。</p>
+        <div class="company-form"><label for="company-invite-email">招待先のGoogleメールアドレス</label><input id="company-invite-email" type="email" autocomplete="off" /><button id="company-invite-button">招待を登録</button></div><div id="company-invites"></div>
+      </section><p id="company-admin-error" class="error" role="alert"></p>
     </dialog>
     <dialog id="google-import-dialog" aria-labelledby="google-import-title">
       <div class="dialog-heading">
@@ -496,7 +532,7 @@
           </table>
         </div>
         <p class="import-help">
-          「この内容で置き換える」で保存します。共有版では共有URLを知っている人が閲覧・編集できます。直後は「元に戻す」で取り消せます。
+        「この内容で置き換える」で保存します。共有版では参加を許可された会社のメンバーが閲覧・編集できます。直後は「元に戻す」で取り消せます。
         </p>
         <button type="button" id="google-apply-button" class="primary">
           この内容で置き換える

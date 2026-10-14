@@ -1,5 +1,5 @@
 "use strict";
-// Browser-safe public credentials. Access requires the private sharing URL; table access is revoked.
+// Browser-safe public credentials. Company access is authorized server-side after Google sign-in.
 window.TOKI_CONFIG = Object.freeze({
   // Public OAuth client ID only. Never put a client secret or access token here.
   googleClientId: "207903051724-pkf6du3mv1v889708fhd78g69fjdpicg.apps.googleusercontent.com",

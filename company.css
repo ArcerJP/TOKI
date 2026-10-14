@@ -1,0 +1,21 @@
+.company-form { display:grid; gap:12px; margin-block:18px; }
+.company-form label { font-weight:600; }
+.company-form input { min-width:0; width:100%; }
+.company-form button, .company-actions button { min-height:44px; }
+.company-actions { display:flex; flex-wrap:wrap; gap:8px; margin-block:12px; }
+.company-choice { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-bottom:1px solid #dce5e2; }
+.company-choice span, .company-choice strong { overflow-wrap:anywhere; }
+.company-member { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:16px 0; border-bottom:1px solid #dce5e2; }
+.company-member strong, .company-member span { flex-basis:100%; overflow-wrap:anywhere; }
+.company-member button { min-height:44px; }
+.company-code { overflow-wrap:anywhere; user-select:all; font-variant-numeric:tabular-nums; }
+#company-button { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.group-view-choices { display:grid; gap:4px; max-height:50dvh; overflow:auto; margin-block:12px; }
+.group-view-choices label, .group-view-all { display:flex; gap:12px; align-items:center; min-height:44px; padding:8px 12px; border-radius:8px; cursor:pointer; }
+.group-view-choices label:hover, .group-view-all { background:#edf4f1; }
+.group-view-choices input, .group-view-all input { width:20px; height:20px; flex:none; }
+.group-view-empty { position:sticky; left:0; padding:24px; max-width:90vw; color:#607870; }
+.auth-gate { overflow:auto; }
+.auth-card { width:min(100%,520px); }
+.auth-card #auth-message { color:#607870; }
+@media (max-width:767px) { #company-dialog, #group-view-dialog { width:calc(100% - 24px); max-height:calc(100dvh - 24px); padding:20px; } .company-choice { flex-wrap:wrap; } }

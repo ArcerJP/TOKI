@@ -11,13 +11,13 @@ window.TokiMobileUI = function (bridge) {
   const rangeText=r=>`${A.time(r.start)}～${A.time(r.end)}`;
   const dayMeetings=(board,date,test)=>board.meetings.filter(m=>m.date===date&&test(m)).sort((a,b)=>a.start-b.start||a.end-b.end);
   const dayText=date=>A.formatDay(date,[]).replace(/：$/,'');
-  const scope=window.TokiShared.enabled?(window.TOKI_CONFIG?.boardId||'shared'):'local';
-  const storage={get(key,fallback){try{return JSON.parse(localStorage.getItem(key+':'+scope))??fallback;}catch{return fallback;}},set(key,value){try{localStorage.setItem(key+':'+scope,JSON.stringify(value));}catch{}}};
+  const scope=()=>window.TokiShared.enabled?(window.TokiShared.scope||'shared'):'local';
+  const storage={get(key,fallback){try{return JSON.parse(localStorage.getItem('toki-view-v1:'+scope()+':'+key))??fallback;}catch{return fallback;}},set(key,value){try{localStorage.setItem('toki-view-v1:'+scope()+':'+key,JSON.stringify(value));}catch{}}};
   const storedHidden=storage.get('toki-mobile-hidden-groups',[]);
   const savedFolded=storage.get('toki-mobile-folded',null);
   let hidden=new Set(Array.isArray(storedHidden)?storedHidden:[]),folded=new Set(Array.isArray(savedFolded)?savedFolded:[]),initialFolds=Array.isArray(savedFolded);
   let page='schedule',view=storage.get('toki-mobile-view','list')==='table'?'table':'list',compact=false,full=false;
-  let draft=null,gesture=null,refreshFrame=0,lastFocus=null,editorNodes=null,lastRender='';
+  let draft=null,gesture=null,refreshFrame=0,lastFocus=null,editorNodes=null,lastRender='',lastScope='';
   const root=$('mobile-app'),header=el('div','mob-header'),content=el('div','mob-content'),nav=el('nav','mob-nav');
   nav.setAttribute('aria-label','メインメニュー');root.append(header,content,nav);
   const narrow=matchMedia('(max-width: 767px)'),tablet=matchMedia('(max-width: 1023px) and (pointer: coarse)');
@@ -46,6 +46,8 @@ window.TokiMobileUI = function (bridge) {
   function editButton(key,name){const b=button(bridge.context().writable?'編集':'確認',()=>openEditor(key),name+'の時間を編集','mob-text-button');b.disabled=bridge.context().busy;return b;}
   function render(){
     const ctx=bridge.context();root.hidden=!compact||!ctx.ready;if(!compact||!ctx.ready)return;
+    if(lastScope!==scope()){lastScope=scope();lastRender='';folded=new Set();initialFolds=false;page='schedule';full=false;}
+    hidden=new Set([...ctx.board.groups.map(g=>g.id),'@unassigned'].filter(id=>!bridge.visibleGroup(id)));
     if(!initialFolds){folded=new Set(ctx.board.groups.map(g=>g.id));initialFolds=true;}
     const signature=JSON.stringify([ctx.fingerprint,ctx.date,ctx.writable,ctx.busy,page,view,full,[...hidden],[...folded],ctx.board.groups.map(g=>bridge.excluded(g.id)),...['save-status','connection-status','pwa-status','install-app','update-app','undo','redo','google-import-button'].map(id=>[$(id).textContent,$(id).hidden,$(id).disabled])]);
     if(signature===lastRender)return;lastRender=signature;
@@ -75,7 +77,8 @@ window.TokiMobileUI = function (bridge) {
     }else{
       content.append(el('h1',null,'その他'));
       actionCard('Googleカレンダーから取り込む','選択したカレンダーの共通の空き時間を反映','google-import-button');
-      if(!$('copy-link').hidden)actionCard('共有URLをコピー','同じ予定表をほかの端末で開く','copy-link');
+      if(!$('copy-link').hidden)actionCard('会社URLをコピー','参加にはGoogleログインと管理者の許可が必要です','copy-link');
+      if(!$('company-button').hidden)actionCard('会社・アカウント','会社の切り替え・ログアウト・参加者の管理','company-button');
       const history=el('div','mob-actions');for(const [id,name] of [['undo','↶ 元に戻す'],['redo','↷ やり直す']]){const b=button(name,()=>openShared(id));b.disabled=$(id).disabled;history.append(b);}content.append(history);
       if(!$('install-app').hidden)actionCard('アプリをインストール','ホーム画面から開く','install-app');
       content.append(el('p','mob-note','iPhone：Safariの共有メニュー →「ホーム画面に追加」でアプリとして使えます。'));
@@ -98,14 +101,7 @@ window.TokiMobileUI = function (bridge) {
     d.append(button('今日',()=>{const now=new Date(),date=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;d.close();bridge.selectDate(date);}));renderWeek();d.showModal();
   }
   function openFilter(){
-    const {d}=dialog('表示グループ');d.append(el('p','mob-note','チェックを外すとグループとその中の人を非表示にします。予定・MTGの対象者・書き出しは変わりません。'));
-    const choices=el('div','mob-checks'),board=bridge.context().board,selection=new Set(hidden),allLabel=el('label'),all=el('input');all.type='checkbox';allLabel.append(all,document.createTextNode('すべて選択'));
-    const updateAll=()=>{const inputs=[...choices.querySelectorAll('input')];all.checked=inputs.every(i=>i.checked);all.indeterminate=!all.checked&&inputs.some(i=>i.checked);};
-    const set=(id,checked)=>{if(checked)selection.delete(id);else selection.add(id);updateAll();};
-    const add=(id,name)=>{const l=el('label'),i=el('input');i.type='checkbox';i.checked=!selection.has(id);i.dataset.group=id;i.onchange=()=>set(id,i.checked);l.append(i,document.createTextNode(name));choices.append(l);};
-    for(const g of board.groups)add(g.id,g.name);add('@unassigned','未所属');
-    all.onchange=()=>{choices.querySelectorAll('input').forEach(i=>{i.checked=all.checked;if(all.checked)selection.delete(i.dataset.group);else selection.add(i.dataset.group);});updateAll();};
-    const allBox=el('div','mob-checks');allBox.append(allLabel);updateAll();d.append(allBox,choices,button('適用',()=>{hidden=selection;storage.set('toki-mobile-hidden-groups',[...hidden]);d.close();render();},undefined,'mob-primary'));d.showModal();
+    bridge.openGroupView();
   }
   function meetingLabel(board,m,inGroup){return inGroup?m.members.map(p=>board.people[p]).join('、')+' MTG':(board.groups.find(g=>g.id===m.group)?.name||'グループ')+' MTG';}
   function showError(container,message){let error=container.querySelector('.mob-error');if(!error){error=el('p','mob-error');error.setAttribute('role','alert');container.append(error);}error.textContent=message;}
@@ -318,12 +314,14 @@ window.TokiMobileUI = function (bridge) {
   document.addEventListener('pointerdown',e=>{if(gesture&&gesture.pointer!==e.pointerId)cancelGesture();},true);
   async function saveDraft(){
     if(!draft||editorNodes.save.disabled)return;
-    try{draft.saveError='';const next=draftPlan();if(await bridge.commit(next,'時間を保存しました',draft.ctx.fingerprint)){draft=null;gesture=null;editor.d.close();}else updatePreview();}catch(e){draft.saveError=e.message;updatePreview();}
+    const current=draft;
+    try{draft.saveError='';const next=draftPlan();const saved=await bridge.commit(next,'時間を保存しました',draft.ctx.fingerprint);if(draft!==current)return;if(saved){draft=null;gesture=null;editor.d.close();}else updatePreview();}catch(e){if(draft!==current)return;draft.saveError=e.message;updatePreview();}
   }
   function refresh(){if(refreshFrame)return;refreshFrame=requestAnimationFrame(()=>{refreshFrame=0;mode();render();if(editor.d.open){if(!bridge.context().writable){cancelGesture();if(draft)draft.mode='scroll';}updatePreview();}});}
   document.querySelectorAll('dialog:not(.mob-dialog)').forEach(d=>d.addEventListener('close',()=>{mode();refresh();if(compact)recoverFocus();}));
   const observer=new MutationObserver(refresh);for(const id of ['save-status','connection-status','pwa-status','install-app','update-app'])observer.observe($(id),{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden']});
   const modalObserver=new MutationObserver(()=>document.documentElement.classList.toggle('mob-modal-open',Boolean(document.querySelector('dialog[open]'))));modalObserver.observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&full&&!document.querySelector('dialog[open]')){full=false;root.classList.remove('mob-full');render();}});
-  mode();return {refresh,get editing(){return editor.d.open;}};
+  function reset(){cancelHold();cancelGesture();draft=null;gesture=null;lastFocus=null;lastRender='';lastScope='';full=false;root.classList.remove('mob-full');header.replaceChildren();content.replaceChildren();nav.replaceChildren();editor.d.close();while(editor.d.children.length>1)editor.d.lastChild.remove();editor.h.textContent='';editorNodes=null;root.hidden=true;}
+  mode();return {refresh,reset,get editing(){return editor.d.open;}};
 };

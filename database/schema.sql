@@ -181,4 +181,11 @@ update public.toki_boards b set payload=jsonb_build_object(
   'meetings','[]'::jsonb)
   where payload->'schemaVersion' is distinct from '4'::jsonb;
 notify pgrst, 'reload schema';
+-- Reapplying the legacy schema must never reopen link-only access after migration.
+do $$ begin
+  if to_regclass('toki_private.companies') is not null then
+    revoke all on function public.toki_share(text,text,uuid,text,jsonb,bigint) from public,anon,authenticated;
+    revoke all on function toki_private.share_action(text,text,uuid,text,jsonb,bigint) from public,anon,authenticated;
+  end if;
+end $$;
 commit;

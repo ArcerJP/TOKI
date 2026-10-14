@@ -4,7 +4,7 @@ const S=require('../schedule.js');
 const date='2026-10-05';
 const seed=()=>S.reserve({schemaVersion:4,people:['A','B','C','D'],groups:[{id:'a',name:'局A',members:[0,1]},{id:'b',name:'局B',members:[1,2]}],events:[0,1,2].map(person=>({id:'e'+person,person,date,start:540,end:1080})),meetings:[]},'a',date,[{start:780,end:840}]);
 const flush=()=>new Promise(resolve=>setTimeout(resolve,40));
-async function environment(t,{width=390,coarse=false,shared=false}={}){
+async function environment(t,{width=390,coarse=false,shared=false,preselect=true}={}){
   const errors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',e=>errors.push(e));
   const dom=new JSDOM(fs.readFileSync('index.html','utf8'),{url:'https://example.test/TOKI/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
   const w=dom.window,d=w.document,media=[];let board=seed(),version=1,hooks,online=true,saves=0,failSave=false;
@@ -18,8 +18,9 @@ async function environment(t,{width=390,coarse=false,shared=false}={}){
   const copies=[];Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>copies.push(text)}});
   w.TOKI_CONFIG={boardId:'test-board'};w.TOKI_DATA={people:[],dates:[date],availability:[]};w.TOKI_DATA_READY=Promise.resolve();
   w.localStorage.setItem('toki-selected-date',date);w.localStorage.setItem('toki-availability-v3',JSON.stringify({version:3,board}));
+  if(preselect)w.localStorage.setItem('toki-view-v1:'+(shared?'shared':'local')+':groups',JSON.stringify({version:1,selected:['a','b','@unassigned']}));
   w.TokiShared={enabled:shared,get online(){return online;},shareUrl:()=>'',initialize:async h=>{hooks=h;h.board({version,payload:board});},save:async next=>{if(failSave)throw Error('試験：保存失敗');saves++;board=structuredClone(next);return {version:++version,payload:board};},refresh:async()=>{}};
-  for(const name of ['model','availability','schedule','availability-ui','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-ui','app'])w.eval(fs.readFileSync(name+'.js','utf8'));
+  for(const name of ['model','availability','schedule','availability-ui','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-ui','group-view','company-ui','app'])w.eval(fs.readFileSync(name+'.js','utf8'));
   await flush();await flush();
   t.after(()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[]);});
   const $=id=>d.getElementById(id),current=()=>shared?board:JSON.parse(w.localStorage.getItem('toki-availability-v3')).board;
@@ -28,8 +29,36 @@ async function environment(t,{width=390,coarse=false,shared=false}={}){
   async function click(label,container){button(label,container).click();await flush();}
   async function select(label,value){const s=[...scope().querySelectorAll('select')].find(e=>e.getAttribute('aria-label')===label);assert.ok(s);s.value=value;s.dispatchEvent(new w.Event('change'));await flush();}
   function pointer(type,minute,id=1,extra={}){const track=d.querySelector('.mob-editor-track'),e=new w.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientY:(minute-480)*1.6,clientX:160});Object.assign(e,{pointerId:id,isPrimary:true,...extra});track.dispatchEvent(e);}
-  return {w,d,$,click,button,select,pointer,copies,current,get saves(){return saves;},get error(){return d.querySelector('.mob-error')?.textContent;},async resize(newWidth,newCoarse=coarse){width=newWidth;coarse=newCoarse;media.forEach(entry=>{entry.matches=entry.media.includes('767')?width<=767:width<=1023&&coarse;entry.listeners.forEach(fn=>fn());});await flush();},async offline(value=true){online=!value;hooks.state({online,fetchedAt:Date.now()});await flush();},async remoteUpdate(){board=structuredClone(board);board.people[0]='A更新';hooks.board({version:++version,payload:board});await flush();},async localUpdate(){const value=structuredClone(current());value.people[0]='A更新';const text=JSON.stringify({version:3,board:value});w.localStorage.setItem('toki-availability-v3',text);w.dispatchEvent(new w.StorageEvent('storage',{key:'toki-availability-v3',newValue:text}));await flush();},fail(){failSave=true;}};
+  return {w,d,$,click,button,select,pointer,copies,current,get saves(){return saves;},get error(){return d.querySelector('.mob-error')?.textContent;},async resetAccount(){hooks.reset();await flush();},async switchScope(scope){hooks.reset();w.TokiShared.scope=scope;hooks.board({version,payload:board});await flush();},async resize(newWidth,newCoarse=coarse){width=newWidth;coarse=newCoarse;media.forEach(entry=>{entry.matches=entry.media.includes('767')?width<=767:width<=1023&&coarse;entry.listeners.forEach(fn=>fn());});await flush();},async offline(value=true){online=!value;hooks.state({online,fetchedAt:Date.now()});await flush();},async remoteUpdate(){board=structuredClone(board);board.people[0]='A更新';hooks.board({version:++version,payload:board});await flush();},async localUpdate(){const value=structuredClone(current());value.people[0]='A更新';const text=JSON.stringify({version:3,board:value});w.localStorage.setItem('toki-availability-v3',text);w.dispatchEvent(new w.StorageEvent('storage',{key:'toki-availability-v3',newValue:text}));await flush();},fail(){failSave=true;}};
 }
+
+test('first visit hides all groups and shares the explicit selection between desktop and mobile',async t=>{
+  const e=await environment(t,{width:1440,preselect:false}),before=JSON.stringify(e.current());
+  assert.equal(e.$('group-view-dialog').open,true);assert.equal(e.$('group-view-dialog').querySelectorAll('input:checked').length,0);
+  assert.equal(e.$('chart').querySelectorAll('.person-row,.group-row').length,0);
+  e.$('group-view-choices').querySelector('[data-group="b"]').click();await e.click('適用');
+  assert.equal(e.$('chart').querySelectorAll('.group-row').length,1);assert.ok(e.$('chart').querySelector('.group-row').textContent.includes('局B'));
+  await e.resize(390);assert.deepEqual([...e.$('mobile-app').querySelectorAll('h2')].map(n=>n.textContent),['局B']);
+  assert.equal(JSON.stringify(e.current()),before);
+});
+
+test('company changes start with their own empty selection; returning restores only that company preference',async t=>{
+  const e=await environment(t,{shared:true});await e.switchScope('u:company-b');
+  assert.equal(e.$('group-view-dialog').open,true);assert.equal(e.$('group-view-dialog').querySelectorAll('input:checked').length,0);
+  e.$('group-view-choices').querySelector('[data-group="b"]').click();await e.click('適用');
+  await e.switchScope('shared');assert.equal(e.$('group-view-dialog').open,false);assert.ok(e.$('mobile-app').textContent.includes('局A'));
+  await e.switchScope('u:company-b');assert.equal(e.$('group-view-dialog').open,false);assert.equal(e.$('mobile-app').textContent.includes('局A'),false);
+});
+
+test('logout closes editors and removes company data from hidden DOM and exported text',async t=>{
+  const e=await environment(t,{shared:true});await e.click('局Aの時間を編集');await e.click('終了を30分遅らせる');
+  e.$('export-result').value='Private schedule';e.$('print-area').textContent='Private schedule';
+  await e.resetAccount();
+  assert.equal(e.d.querySelector('dialog[open]'),null);assert.equal(e.$('auth-gate').hidden,false);
+  assert.equal(e.$('mobile-app').hidden,true);assert.equal(e.$('mobile-editor').textContent,'閉じる');
+  assert.equal(e.$('export-result').value,'');assert.equal(e.$('print-area').textContent,'');
+  assert.equal(e.$('chart').textContent,'');assert.equal(e.saves,0);
+});
 test('compact layout selection and deferred switching preserve an open editor',async t=>{
   const e=await environment(t,{width:768});assert.equal(e.$('mobile-app').hidden,true);
   await e.resize(767);assert.equal(e.$('mobile-app').hidden,false);
@@ -78,7 +107,7 @@ test('group filters apply together, do not change the board or export defaults, 
   const e=await environment(t),before=JSON.stringify(e.current());await e.click('表示グループを選択');const choices=e.d.querySelector('dialog[open]');
   const checkbox=choices.querySelector('[data-group="a"]');checkbox.click();assert.ok([...e.$('mobile-app').querySelectorAll('h2')].some(h=>h.textContent==='局A'));
   assert.equal(choices.querySelector('input').indeterminate,true);await e.click('適用');
-  assert.equal([...e.$('mobile-app').querySelectorAll('h2')].some(h=>h.textContent==='局A'),false);assert.ok(e.w.localStorage.getItem('toki-mobile-hidden-groups:local').includes('a'));assert.equal(JSON.stringify(e.current()),before);
+  assert.equal([...e.$('mobile-app').querySelectorAll('h2')].some(h=>h.textContent==='局A'),false);assert.ok(!JSON.parse(e.w.localStorage.getItem('toki-view-v1:local:groups')).selected.includes('a'));assert.equal(JSON.stringify(e.current()),before);
   await e.click('局Bのメンバー表示');assert.ok([...e.$('mobile-app').querySelectorAll('h3')].some(h=>h.textContent==='B'));
   await e.click('書き出し');await e.click('MTG一括書き出し');assert.equal(e.$('meeting-export-groups').querySelectorAll('input:checked').length,2);
   const expected=S.exportMeetings(e.current(),e.current().groups.map(g=>g.id),'2026-10-04','2026-10-10');

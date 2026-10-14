@@ -1,121 +1,136 @@
 "use strict";
 (() => {
-  const local = location.protocol === "file:" || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-  const enabled = !local || new URLSearchParams(location.search).get("mode") === "shared";
-  const config = window.TOKI_CONFIG;
-  const hooks = {};
-  const storageKey = `toki-participant-v2:${config?.boardId}`;
-  const offlineKey = `toki-offline-v1:${config?.boardId}`;
-  let client, token, refreshing = false, online = false, fetchedAt = null;
-  const emit = (type, value) => hooks[type]?.(value);
-  const error = (message, code) => Object.assign(new Error(message), {code});
-  const messages = {
-    LINK: "共有URLが無効です。招待された共有URLを開いてください。",
-    NAME_TAKEN: "その名前はすでに登録されています。苗字やニックネームなどを加え、別の名前にしてください。",
-    NAME_INVALID: "名前は空白以外の文字を使い、40文字以内で入力してください。",
-    LIMIT: "参加者が上限の100人に達しています。",
-    CONFLICT: "他の人が予定を変更したため保存しませんでした。最新の予定を確認して、もう一度編集してください。",
-    UPDATE_REQUIRED: "最新版に更新されています。ページを再読み込みしてください。",
-    INVALID: "予定の形式が正しくありません。最新の予定を再取得してください。",
-    NETWORK: "通信を確認できませんでした。接続を確認して再度お試しください。"
-  };
-  function remember() {
-    try { localStorage.setItem(storageKey, JSON.stringify({token})); }
-    catch { emit("warning", "このブラウザーでは共有URLを記憶できません。次回も共有URLから開いてください。"); }
+  const local=location.protocol==='file:'||['localhost','127.0.0.1','[::1]'].includes(location.hostname);
+  const enabled=!local||new URLSearchParams(location.search).get('mode')==='shared',config=window.TOKI_CONFIG;
+  const hooks={},PREFIX='toki-company-v1:',PROFILE=PREFIX+'profile';
+  let client,user=null,company=null,companies=[],online=false,fetchedAt=null,epoch=0,refreshing=false,initialized=false;
+  const emit=(event,value)=>hooks[event]?.(value),error=(message,code)=>Object.assign(Error(message),{code});
+  const messages={AUTH:'Googleでログインしてください。',DENIED:'この会社のアクセス権限がありません。管理者に確認してください。',COMPANY:'会社コードを確認してください。',CONFLICT:'他の人が予定を変更しました。最新の予定からもう一度編集してください。',INVALID:'入力内容を確認してください。',LAST_ADMIN:'最後の管理者は解除できません。先に別の管理者を設定してください。',LIMIT:'登録数の上限に達しました。管理者に確認してください。',NETWORK:'接続できません。保存済みの予定は閲覧のみ利用できます。',CONFIG:'会社の認証設定が完了していません。管理者に確認してください。',STALE:'画面が切り替わったため処理を中止しました。'};
+  const read=(key,fallback=null)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
+  const write=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{emit('warning','端末に保存できません。オフライン閲覧や表示設定の保存が利用できない場合があります。');}};
+  const remove=key=>{try{localStorage.removeItem(key);}catch{}};
+  const profile=()=>user?{id:user.id,email:user.email}:null;
+  const companyKey=id=>PREFIX+user.id+':'+id;
+  const scope=()=>enabled?(user&&company?user.id+':'+company.id:'signed-out'):'local';
+  const validCompany=c=>c&&typeof c.id==='string'&&typeof c.name==='string'&&typeof c.code==='string'&&['pending','active','blocked'].includes(c.status)&&['admin','member'].includes(c.role);
+  function state(){emit('account',{user:profile(),company,companies,online});}
+  function connection(value){online=value;emit('state',{online,fetchedAt});state();}
+  function reset(){epoch++;refreshing=false;online=false;fetchedAt=null;emit('reset');}
+  function eraseUser(id){
+    const keys=[];try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key?.startsWith(PREFIX+id+':')||key?.startsWith('toki-view-v1:'+id+':'))keys.push(key);}}catch{}
+    keys.forEach(remove);remove(PROFILE);
   }
-  const validBoard = board => Number.isSafeInteger(board?.version) && board.version >= 0 && window.TokiModel.valid(board.payload);
-  function connection(value) {
-    online = value;
-    emit('state', {online, fetchedAt});
+  const validBoard=b=>b?.companyId===company?.id&&Number.isSafeInteger(b.version)&&b.version>=1&&window.TokiModel.valid(b.payload);
+  function cached(){if(!user||!company)return null;const entry=read(companyKey(company.id));return entry?.userId===user.id&&entry.companyId===company.id&&Number.isFinite(entry.fetchedAt)&&validBoard(entry.board)?entry:null;}
+  function cacheBoard(board){
+    if(!validBoard(board))throw error(messages.INVALID,'INVALID');
+    const previous=cached();if(previous?.board.version>board.version)return;
+    fetchedAt=Date.now();write(companyKey(company.id),{userId:user.id,companyId:company.id,board,fetchedAt});
   }
-  function cacheBoard(board) {
-    if (!validBoard(board)) throw error(messages.INVALID, 'INVALID');
-    // A slow poll must not replace a newer successful save in the offline snapshot.
-    const previous = cachedBoard();
-    if (previous && previous.version > board.version) return;
-    fetchedAt = Date.now();
-    try { localStorage.setItem(offlineKey, JSON.stringify({token, board, fetchedAt})); }
-    catch { emit('warning', '端末に予定を保存できないため、次回オフラインで閲覧できません。'); }
-  }
-  function cachedBoard() {
-    try {
-      const cached = JSON.parse(localStorage.getItem(offlineKey));
-      if (cached?.token === token && Number.isFinite(cached.fetchedAt) && validBoard(cached.board)) {
-        fetchedAt = cached.fetchedAt;
-        return cached.board;
-      }
-    } catch {}
-    return null;
-  }
-  function forgetCachedBoard() {
-    try { if (JSON.parse(localStorage.getItem(offlineKey))?.token === token) localStorage.removeItem(offlineKey); } catch {}
-    fetchedAt = null;
-  }
-  async function request(action, extra = {}) {
-    if (!client || !token) throw error(messages.LINK, "LINK");
-    if (navigator.onLine === false) throw error(messages.NETWORK, 'NETWORK');
-    let result;
-    try { result = await client.rpc("toki_share", {p_token:token, p_action:action, ...extra}); }
-    catch { throw error(messages.NETWORK, "NETWORK"); }
-    if (result.error) {
-      const code = Object.hasOwn(messages, result.error.message) ? result.error.message : "NETWORK";
-      throw error(messages[code], code);
+  function networkFailure(failure,status){return !status||status===0||status>=500||/fetch|network|通信/i.test(failure?.message||'');}
+  async function rpc(action,extra={}){
+    if(!user)throw error(messages.AUTH,'AUTH');
+    if(navigator.onLine===false)throw error(messages.NETWORK,'NETWORK');
+    const generation=epoch,identity=user.id;
+    let result;try{result=await client.rpc('toki_company',{p_action:action,...extra});}catch{if(epoch!==generation||user?.id!==identity)throw error(messages.STALE,'STALE');throw error(messages.NETWORK,'NETWORK');}
+    if(epoch!==generation||user?.id!==identity)throw error(messages.STALE,'STALE');
+    if(result.error){
+      const code=Object.hasOwn(messages,result.error.message)?result.error.message:result.status===401?'AUTH':result.error.code==='PGRST202'?'CONFIG':networkFailure(result.error,result.status)?'NETWORK':'INVALID';
+      throw error(messages[code],code);
     }
     return result.data;
   }
-  const fetchBoard = () => request("read_availability");
-  function accept(board) {
-    cacheBoard(board); remember(); emit('board', board); connection(true);
+  const remember=()=>{write(PROFILE,profile());write(PREFIX+user.id+':companies',companies);};
+  async function listCompanies(){
+    const data=await rpc('list');if(!Array.isArray(data)||!data.every(validCompany))throw error(messages.INVALID,'INVALID');
+    companies=data;remember();state();return companies;
   }
-  function failed(failure) {
-    if (failure.code === 'LINK') forgetCachedBoard();
-    connection(false); emit('error', failure);
+  function accept(board){cacheBoard(board);emit('board',board);connection(true);}
+  function failed(failure){
+    if(failure.code==='STALE')return;
+    if(['AUTH','DENIED','CONFIG'].includes(failure.code)){
+      if(user&&company)remove(companyKey(company.id));
+      reset();company=null;state();
+      if(failure.code==='AUTH'){const id=user?.id;user=null;companies=[];if(id)eraseUser(id);state();}
+    }
+    connection(false);emit('error',failure);
   }
-  async function refresh() {
-    if (!token || refreshing) return;
-    refreshing = true;
-    try { accept(await fetchBoard()); }
-    catch (failure) { failed(failure); }
-    finally { refreshing = false; }
+  const fetchBoard=()=>{if(!company)throw error(messages.COMPANY,'COMPANY');return rpc('read',{p_company:company.id});};
+  async function refresh(){
+    if(!user||!company||refreshing)return;
+    const generation=epoch;refreshing=true;
+    try{accept(await fetchBoard());}catch(failure){failed(failure);}finally{if(generation===epoch)refreshing=false;}
   }
-  async function initialize(callbacks) {
-    Object.assign(hooks, callbacks);
-    if (!enabled) return;
-    if (!config?.url || !config?.publishableKey) throw error("共有先が設定されていません。", "CONFIG");
-    let stored = {};
-    try { stored = JSON.parse(localStorage.getItem(storageKey)) || {}; } catch {}
-    const fragment = new URLSearchParams(location.hash.slice(1));
-    token = fragment.has("share") ? fragment.get("share") : stored.token;
-    if (!/^[a-f0-9]{64}$/.test(token || "")) throw error(messages.LINK, "LINK");
-    await new Promise((resolve, reject) => {
-      const script = document.createElement("script"); script.src = "vendor/supabase.js";
-      script.onload = resolve; script.onerror = () => reject(error("共有機能を読み込めません。再読み込みしてください。", "LOAD"));
-      document.head.append(script);
+  async function selectCompany(id){
+    const next=companies.find(c=>c.id===id&&c.status==='active');if(!next)throw error(messages.DENIED,'DENIED');
+    // Reconnection verifies membership without discarding an open edit in this company.
+    if(company?.id===next.id&&fetchedAt!==null){company=next;state();await refresh();return;}
+    reset();company=next;write(PREFIX+user.id+':selected',id);state();
+    try{accept(await fetchBoard());}catch(failure){
+      if(failure.code==='NETWORK'){const entry=cached();if(entry){fetchedAt=entry.fetchedAt;emit('board',entry.board);}}
+      failed(failure);if(failure.code!=='NETWORK'||!cached())throw failure;
+    }
+  }
+  async function loadAccount(session){
+    const next=session?.user||null;
+    if(user?.id!==next?.id){const previous=user?.id;reset();company=null;companies=[];if(previous)eraseUser(previous);user=next;window.TokiGoogleCalendar?.logout();}
+    if(!user){state();return;}
+    try{
+      await listCompanies();
+    }catch(failure){
+      if(failure.code==='NETWORK'){
+        const saved=read(PREFIX+user.id+':companies',[]);companies=Array.isArray(saved)?saved.filter(validCompany):[];state();
+      }else {failed(failure);return;}
+    }
+    const selected=company?.id||read(PREFIX+user.id+':selected');
+    if(selected&&companies.some(c=>c.id===selected&&c.status==='active')){try{await selectCompany(selected);}catch{/* selectCompany reports the failure; keep reconnect listeners running. */}}
+    else {if(company){remove(companyKey(company.id));reset();company=null;}state();}
+  }
+  async function initialize(callbacks){
+    Object.assign(hooks,callbacks);if(!enabled||initialized)return;initialized=true;
+    if(!config?.url||!config?.publishableKey)throw error(messages.CONFIG,'CONFIG');
+    remove('toki-offline-v1:'+config.boardId);remove('toki-participant-v2:'+config.boardId);
+    if(location.hash.startsWith('#share='))history.replaceState(null,'',location.pathname+location.search);
+    await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='vendor/supabase.js';script.onload=resolve;script.onerror=()=>reject(error('認証機能を読み込めません。再読み込みしてください。','LOAD'));document.head.append(script);});
+    client=window.TokiSupabase.createClient(config.url,config.publishableKey,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    let booting=true;
+    client.auth.onAuthStateChange((event,session)=>{
+      if(booting||event==='INITIAL_SESSION')return;
+      // Never await Supabase methods within the auth callback (SDK lock).
+      if(event==='SIGNED_OUT'){const previous=user?.id;reset();company=null;companies=[];user=null;if(previous)eraseUser(previous);window.TokiGoogleCalendar?.logout();state();}
+      else if(session?.user.id!==user?.id)setTimeout(()=>loadAccount(session).catch(failed),0);
     });
-    client = window.TokiSupabase.createClient(config.url, config.publishableKey, {auth:{persistSession:false, autoRefreshToken:false, detectSessionInUrl:false}});
-    setInterval(() => { if (!document.hidden) refresh(); }, 5000);
-    window.addEventListener("online", refresh);
-    window.addEventListener('offline', () => connection(false));
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
-    try { accept(await fetchBoard()); }
-    catch (failure) {
-      // A cache is usable only for this exact sharing token, and only on a network failure.
-      const cached = failure.code === 'NETWORK' ? cachedBoard() : null;
-      if (cached) emit('board', cached);
-      failed(failure);
-      if (!cached) throw failure;
-    }
+    const {data,error:authError}=await client.auth.getSession();booting=false;
+    if(data?.session)await loadAccount(data.session);
+    else if(navigator.onLine===false||authError&&networkFailure(authError,authError.status)){
+      const saved=read(PROFILE);if(saved?.id&&saved?.email){user=saved;await loadAccount({user:saved});}else state();
+    }else state();
+    setInterval(()=>{if(!document.hidden){if(company)refresh();else if(user&&navigator.onLine!==false)listCompanies().catch(failed);}},5000);
+    window.addEventListener('online',()=>loadAccount(user?{user}:null).catch(failed));
+    window.addEventListener('offline',()=>connection(false));
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
   }
-  async function save(payload, version) {
-    if (!online) throw error('オフラインでは閲覧のみです。接続が戻るまでお待ちください。', 'NETWORK');
-    try {
-      const board = await request(payload.schemaVersion===4?'save_availability':'save_calendar', {p_payload:payload, p_version:version});
-      cacheBoard(board); connection(true); return board;
-    } catch (failure) {
-      if (failure.code !== 'CONFLICT') failed(failure);
-      throw failure;
-    }
+  async function login(code){
+    if(!client)throw error(messages.CONFIG,'CONFIG');
+    if(code)write(PREFIX+'join-code',code.trim());
+    const {error:failure}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:config.siteUrl,queryParams:{prompt:'select_account'}}});
+    if(failure)throw error('Googleログインを開始できません。認証設定と接続を確認してください。','AUTH');
   }
-  const shareUrl = () => token ? `${config.siteUrl}#share=${token}` : config.siteUrl;
-  window.TokiShared = {enabled, initialize, save, refresh, fetchBoard, shareUrl, get online(){return online;}};
+  async function logout(){
+    const id=user?.id;reset();company=null;companies=[];user=null;if(id)eraseUser(id);remove(PREFIX+'join-code');window.TokiGoogleCalendar?.logout();state();
+    if(client){const {error:failure}=await client.auth.signOut({scope:'local'});if(failure)emit('warning','ログアウトの通信に失敗しました。再接続後にもう一度ログアウトしてください。');}
+  }
+  async function join(code){await rpc('join',{p_code:code});remove(PREFIX+'join-code');return listCompanies();}
+  async function createCompany(name){const result=await rpc('create',{p_name:name});await listCompanies();await selectCompany(result.id);}
+  async function manage(action,extra={}){if(!company)throw error(messages.COMPANY,'COMPANY');const value=await rpc(action,{p_company:company.id,...extra});if(action!=='members')await listCompanies();return value;}
+  async function save(payload,version){
+    if(!online||!company)throw error(messages.NETWORK,'NETWORK');
+    try{const board=await rpc('save',{p_company:company.id,p_payload:payload,p_version:version});cacheBoard(board);connection(true);return board;}
+    catch(failure){if(!['CONFLICT','STALE'].includes(failure.code))failed(failure);throw failure;}
+  }
+  function leaveView(){reset();company=null;state();}
+  const shareUrl=()=>config.siteUrl+(company?'#company='+encodeURIComponent(company.code):'');
+  window.TokiShared={enabled,companyAccess:true,initialize,save,refresh,fetchBoard,shareUrl,login,logout,join,createCompany,selectCompany,listCompanies,manage,leaveView,
+    get online(){return online;},get scope(){return scope();},get user(){return profile();},get company(){return company;},get companies(){return companies;},
+    get pendingCode(){return new URLSearchParams(location.hash.slice(1)).get('company')||read(PREFIX+'join-code','');}};
 })();
