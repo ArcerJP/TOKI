@@ -26,13 +26,14 @@ Googleログインは取り込み機能だけで使用します。共有予定�
 1. 「Googleカレンダーから取り込む」を押します。
 2. 取り込み先の人と取得開始・終了を入力します。時刻は日本時間で、終了時刻は期間に含みません。最大366日です。
 3. 「Googleでログイン」でアカウントを選び、カレンダー一覧と予定あり／なしの閲覧を許可します。
-4. 取得したカレンダーは初期状態で全選択です。不要なカレンダーのチェックを外します。「全選択」で一括切り替えできます。「一覧を再取得」や画面の開き直しでは最新の一覧を全選択に戻します。
+4. 取得したカレンダーは初期状態で全選択です。「日本の祝日」などGoogleの祝日カレンダーは一覧・取り込み対象から自動で除外します。不要なカレンダーのチェックを外します。「全選択」で一括切り替えできます。「一覧を再取得」や画面の開き直しでは最新の一覧を全選択に戻します。
 5. 「空き時間を確認」でプレビューを表示します。
 6. 内容を確認し「この内容で置き換える」で保存します。直後は「元に戻す」で取り消せます。
 
 ## 判定と保存
 
 - CalendarList APIでカレンダーのID・表示名・メインの区別・閲覧権限を取得します。非表示の登録カレンダーも対象にし、削除済みのものは含めません。一覧は最後のページまで取得します。Google Tasks APIは使用せず、ToDoリスト専用の取り込みは行いません。
+- Googleの祝日カレンダーはID末尾の `#holiday@group.v.calendar.google.com` または `@holiday.calendar.google.com` で判別し、一覧への表示とFreeBusyへの送信を除外します。言語や表示名の変更に左右されません。通常の個人・共有カレンダーは名前に「祝日」が含まれていても残します。
 - Google FreeBusy APIを使い、指定した`timeMin`・`timeMax`でチェックしたカレンダーだけを取得します。50件を超える場合は50件ずつ分割します。予定の一覧・タイトル・説明・場所・プロフィールは取得しません。
 - 選択した全カレンダーのBusy区間をまとめ、そのいずれとも重ならない時間を可能時間にします。共有カレンダーの他人の予定も判定に含まれるため、不要なものは選択を解除してください。
 - 一覧の取得失敗、選択ゼロ、一部カレンダーの読み取りエラーや応答欠落がある場合は取り込みを止めます。未取得のカレンダーを「予定なし」と扱いません。カレンダーの選択を変更すると古いプレビューを無効にします。
@@ -48,6 +49,8 @@ Googleログインは取り込み機能だけで使用します。共有予定�
 
 - [Google FreeBusy API](https://developers.google.com/workspace/calendar/api/v3/reference/freebusy/query)
 - [Google CalendarList API](https://developers.google.com/workspace/calendar/api/v3/reference/calendarList/list)
+- [Googleの祝日カレンダー](https://support.google.com/calendar/answer/13748345?hl=ja)
+- [Googleが公開する日本の祝日カレンダー（ID確認用）](https://calendar.google.com/calendar/embed?src=ja.japanese%23holiday%40group.v.calendar.google.com)
 - [Google Calendar権限一覧](https://developers.google.com/workspace/calendar/api/auth)
 - [Google Identity Servicesトークンモデル](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
 - [同意画面の設定](https://developers.google.com/workspace/guides/configure-oauth-consent)

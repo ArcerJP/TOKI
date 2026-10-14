@@ -34,7 +34,7 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen})=>{
       checkbox.addEventListener('change',()=>{if(checkbox.checked)chosen.add(calendar.id);else chosen.delete(calendar.id);invalidate();error('');controls();});
       $('google-calendar-list').append(label);
     }
-    if(!calendars.length)error('読み取り可能なカレンダーがありません。Google側の共有設定を確認してください。');
+    if(!calendars.length)error('取り込み対象のカレンダーがありません。祝日以外のカレンダーとGoogle側の共有設定を確認してください。');
   }
   function current(){
     const state=context();

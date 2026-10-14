@@ -48,6 +48,41 @@ test('failed or malformed later pages never return a partial calendar list',asyn
   }
 });
 
+test('Google holiday calendars are omitted across pages and languages without filtering ordinary names',async()=>{
+  const e=environment();await e.api.login();
+  e.respond(url=>new URL(url).searchParams.has('pageToken')?{items:[
+    {id:'ja.japanese.official#holiday@group.v.calendar.google.com',summary:'日本の祝日',accessRole:'reader'},
+    {id:'en.usa#holiday@group.v.calendar.google.com',summary:'Holidays in United States',accessRole:'reader'},
+    {id:'japanese__ja@holiday.calendar.google.com',summary:'日本の祝日',accessRole:'reader'},
+    {id:'team@group.calendar.google.com',summary:'日本の祝日',accessRole:'reader'}
+  ]}:{nextPageToken:'next',items:[
+    {id:'mine',summary:'個人',primary:true,accessRole:'owner'},
+    {id:'ja.japanese#holiday@group.v.calendar.google.com',summary:'日本の祝日',summaryOverride:'変更した表示名',accessRole:'reader'},
+    {id:'work',summary:'祝日の勤務シフト',accessRole:'owner'}
+  ]});
+  const calendars=structuredClone(await e.api.listCalendars());
+  assert.deepEqual(calendars.map(c=>c.id).sort(),['mine','team@group.calendar.google.com','work']);
+  assert.equal(calendars.find(c=>c.id==='team@group.calendar.google.com').name,'日本の祝日');
+  assert.equal(e.calls.length,2);
+});
+
+test('holiday calendars are never sent to FreeBusy, including obsolete selections',async()=>{
+  const e=environment();await e.api.login();
+  const holidays=['ja.japanese#holiday@group.v.calendar.google.com','en.japanese.official#holiday@group.v.calendar.google.com','japanese__ja@holiday.calendar.google.com'];
+  await e.api.fetchBusy(range,['personal',...holidays,'shared']);
+  const body=JSON.parse(e.calls[0].options.body);
+  assert.deepEqual(body.items,[{id:'personal'},{id:'shared'}]);assert.equal(body.calendarExpansionMax,2);
+  await assert.rejects(e.api.fetchBusy(range,holidays),/祝日カレンダーは対象外/);
+  assert.equal(e.calls.length,1);
+});
+
+test('an account containing only holiday calendars yields an empty selection rather than empty busy data',async()=>{
+  const e=environment();await e.api.login();
+  e.respond(()=>({items:[{id:'ja.japanese#holiday@group.v.calendar.google.com',summary:'日本の祝日',accessRole:'reader'}]}));
+  const calendars=await e.api.listCalendars();assert.equal(calendars.length,0);
+  await assert.rejects(e.api.fetchBusy(range,calendars.map(c=>c.id)),/1つ以上/);assert.equal(e.calls.length,1);
+});
+
 test('more than 50 selected calendars are batched without skipping or duplicating IDs',async()=>{
   const e=environment();await e.api.login();const ids=Array.from({length:101},(_,i)=>'calendar-'+i);
   assert.equal((await e.api.fetchBusy(range,[...ids,ids[0]])).length,0);

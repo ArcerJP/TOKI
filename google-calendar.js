@@ -3,6 +3,8 @@
   const SCOPES=['https://www.googleapis.com/auth/calendar.calendarlist.readonly','https://www.googleapis.com/auth/calendar.events.freebusy'];
   const ENDPOINT='https://www.googleapis.com/calendar/v3/freeBusy?fields=timeMin%2CtimeMax%2Ccalendars';
   const LIST_ENDPOINT='https://www.googleapis.com/calendar/v3/users/me/calendarList';
+  // Google-provided holiday calendars use these IDs, independently of their display name.
+  const isHolidayCalendar=id=>/(?:#holiday@group\.v\.calendar\.google\.com|@holiday\.calendar\.google\.com)$/i.test(id);
   let sdkPromise,client,token='',expires=0,pendingLogin=false;
   const configured=()=>/^\d+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(window.TOKI_CONFIG?.googleClientId||'');
   const connected=()=>Boolean(token)&&Date.now()<expires;
@@ -79,6 +81,7 @@
       if(!data||typeof data!=='object'||data.items!==undefined&&!Array.isArray(data.items))throw Error('カレンダー一覧を確認できませんでした。一覧を再取得してください。');
       for(const entry of data.items||[]){
         if(!entry||typeof entry.id!=='string'||!entry.id.trim()||!['owner','writer','writerWithoutPrivateAccess','reader','freeBusyReader'].includes(entry.accessRole))throw Error('カレンダー一覧を確認できませんでした。一覧を再取得してください。');
+        if(isHolidayCalendar(entry.id))continue;
         const name=entry.summaryOverride||entry.summary;
         calendars.set(entry.id,{id:entry.id,name:typeof name==='string'&&name.trim()?name:'名称未設定のカレンダー',primary:entry.primary===true});
       }
@@ -91,7 +94,8 @@
   async function fetchBusy(range,calendarIds,signal){
     const sessionToken=access();
     if(!Array.isArray(calendarIds)||!calendarIds.length||calendarIds.some(id=>typeof id!=='string'||!id.trim()))throw Error('取り込むカレンダーを1つ以上選択してください。');
-    const ids=[...new Set(calendarIds)],busy=[];
+    const ids=[...new Set(calendarIds)].filter(id=>!isHolidayCalendar(id)),busy=[];
+    if(!ids.length)throw Error('取り込むカレンダーを1つ以上選択してください。祝日カレンダーは対象外です。');
     // Google allows at most 50 calendars per FreeBusy query. Never return a partial batch.
     for(let start=0;start<ids.length;start+=50){
       const batch=ids.slice(start,start+50);
