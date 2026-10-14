@@ -1,6 +1,18 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {assets,worker}=require('../scripts/pwa-assets.cjs');
 const scope='https://example.test/TOKI/';
+test('pending updates are actionable from the signed-out gate without interrupting edits',async t=>{
+  const {JSDOM}=require('jsdom'),dom=new JSDOM(fs.readFileSync('index.html','utf8'),{url:scope,runScripts:'outside-only'}),w=dom.window;
+  t.after(()=>w.close());const sent=[],registration={waiting:{postMessage:value=>sent.push(value.type)},addEventListener(){}};
+  Object.defineProperty(w,'isSecureContext',{value:true});
+  Object.defineProperty(w.navigator,'serviceWorker',{value:{controller:{},addEventListener(){},register:async()=>registration}});
+  w.document.getElementById('schedule-app').hidden=true;w.document.getElementById('auth-gate').hidden=false;
+  w.eval(fs.readFileSync('pwa.js','utf8'));w.dispatchEvent(new w.Event('load'));await new Promise(resolve=>setTimeout(resolve,10));
+  const button=w.document.getElementById('auth-update-app');assert.equal(button.hidden,false);
+  w.document.getElementById('schedule-app').setAttribute('aria-busy','true');button.click();
+  assert.equal(sent.length,0);assert.equal(w.document.getElementById('auth-pwa-status').hidden,false);
+  w.document.getElementById('schedule-app').setAttribute('aria-busy','false');button.click();assert.deepEqual(sent,['ACTIVATE_UPDATE']);
+});
 function environment(){
   const handlers={},stores=new Map(),deleted=[],requests=[];let claimed=false,skipped=false,fetches=0;
   const caches={

@@ -348,7 +348,6 @@
       state:connectionState,
       error:error=>{
         $("auth-message").textContent=error.message;$("auth-retry").hidden=false;
-        $("company-error").textContent=error.message;
         if(error.code==="LINK"){ready=false;$("schedule-app").hidden=true;$("auth-gate").hidden=false;}
       }
     });}
