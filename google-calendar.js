@@ -30,12 +30,13 @@
       client=window.google.accounts.oauth2.initTokenClient({
         client_id:window.TOKI_CONFIG.googleClientId,scope:SCOPE,include_granted_scopes:false,
         callback:response=>{
+          if(response.error==='access_denied')return failed('Googleへのアクセスが許可されませんでした。権限の許可を取り消した場合はログインし直してください。「テスト中」「アクセスをブロック」と表示された場合は、管理者にログインするアカウントのテストユーザー登録を依頼してください。');
           if(response.error||!response.access_token||!window.google.accounts.oauth2.hasGrantedAllScopes(response,SCOPE))return failed('カレンダーの予定あり／なしを確認する権限が必要です。Googleでログインし直してください。');
           const lifetime=Number(response.expires_in);
           if(!Number.isFinite(lifetime)||lifetime<=30)return failed('Googleの認証を確認できませんでした。再度ログインしてください。');
           token=response.access_token;expires=Date.now()+(lifetime-30)*1000;pendingLogin=false;resolve();
         },
-        error_callback:failure=>failed(failure.type==='popup_closed'?'Googleログインをキャンセルしました。':'Googleのログイン画面を開けません。ブラウザーでポップアップを許可して再度お試しください。')
+        error_callback:failure=>failed(failure.type==='popup_closed'?'Googleログインが完了する前に画面が閉じられました。「テスト中」「アクセスをブロック」と表示された場合は、管理者にログインするアカウントのテストユーザー登録を依頼してください。':failure.type==='popup_failed_to_open'?'Googleのログイン画面を開けません。ブラウザーでポップアップを許可して再度お試しください。':'Googleログインを完了できませんでした。画面を開き直して、もう一度お試しください。')
       });
       try{client.requestAccessToken({prompt:'select_account'});}catch{failed('Googleログインを開始できませんでした。');}
     });

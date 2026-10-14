@@ -1,10 +1,10 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync('google-calendar.js','utf8'),scope='https://www.googleapis.com/auth/calendar.freebusy';
 function environment(){
-  let config,status=200,response={},access={access_token:'private-token',expires_in:3600},now=1000,granted=true;const calls=[];
-  const window={TOKI_CONFIG:{googleClientId:'123456-example.apps.googleusercontent.com'},TokiCalendarImport:{readBusy:data=>data},google:{accounts:{oauth2:{initTokenClient:value=>{config=value;return {requestAccessToken(){queueMicrotask(()=>value.callback(access));}};},hasGrantedAllScopes:()=>granted}}}};
+  let config,status=200,response={},access={access_token:'private-token',expires_in:3600},now=1000,granted=true,popupError=null;const calls=[];
+  const window={TOKI_CONFIG:{googleClientId:'123456-example.apps.googleusercontent.com'},TokiCalendarImport:{readBusy:data=>data},google:{accounts:{oauth2:{initTokenClient:value=>{config=value;return {requestAccessToken(){queueMicrotask(()=>popupError?value.error_callback({type:popupError}):value.callback(access));}};},hasGrantedAllScopes:()=>granted}}}};
   vm.runInNewContext(source,{window,location:{protocol:'https:'},Date:{now:()=>now},AbortController,setTimeout,clearTimeout,fetch:async(url,options)=>{calls.push({url,options});return {ok:status===200,status,json:async()=>response};}});
-  return {api:window.TokiGoogleCalendar,calls,get config(){return config;},setStatus:n=>status=n,setAccess:a=>access=a,expire:()=>now+=3600000,setGranted:v=>granted=v};
+  return {api:window.TokiGoogleCalendar,calls,get config(){return config;},setStatus:n=>status=n,setAccess:a=>access=a,expire:()=>now+=3600000,setGranted:v=>granted=v,setPopupError:v=>popupError=v};
 }
 test('Google is the only login provider and requests only free/busy permission',async()=>{
   const e=environment();await e.api.login();assert.equal(e.config.scope,scope);assert.equal(e.config.include_granted_scopes,false);assert.equal(e.api.connected,true);
@@ -23,4 +23,19 @@ test('permission denial, expired credentials and logout prevent Calendar request
 test('401 clears credentials and 403 is reported instead of returning empty busy data',async()=>{
   const a=environment();await a.api.login();a.setStatus(401);await assert.rejects(a.api.fetchBusy({}));assert.equal(a.api.connected,false);
   const b=environment();await b.api.login();b.setStatus(403);await assert.rejects(b.api.fetchBusy({}));
+});
+test('access_denied explains test-user registration and allows a clean retry',async()=>{
+  const e=environment();e.setAccess({error:'access_denied',error_description:'untrusted response'});
+  await assert.rejects(e.api.login(),error=>/テストユーザー登録/.test(error.message)&&!error.message.includes('untrusted response'));
+  assert.equal(e.api.connected,false);assert.equal(e.calls.length,0);
+  e.setAccess({access_token:'private-token',expires_in:3600});await e.api.login();assert.equal(e.api.connected,true);
+});
+test('closing an error popup does not falsely claim the user cancelled',async()=>{
+  const e=environment();e.setPopupError('popup_closed');
+  await assert.rejects(e.api.login(),error=>/画面が閉じられました/.test(error.message)&&/テストユーザー登録/.test(error.message)&&!error.message.includes('キャンセルしました'));
+  assert.equal(e.api.connected,false);e.setPopupError(null);await e.api.login();assert.equal(e.api.connected,true);
+});
+test('only popup-blocking errors advise allowing popups',async()=>{
+  const e=environment();e.setPopupError('popup_failed_to_open');await assert.rejects(e.api.login(),/ポップアップを許可/);
+  e.setPopupError('unknown');await assert.rejects(e.api.login(),error=>!error.message.includes('ポップアップを許可'));
 });
