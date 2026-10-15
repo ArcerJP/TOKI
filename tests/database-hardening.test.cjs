@@ -17,18 +17,19 @@ test('Unicode validation and application abuse cannot lock out a company',async 
   await auth(1);await rpc('list');await db.exec('reset role');
   const scenario=(name,fn)=>t.test(name,async()=>{await db.exec('reset role;begin');try{await fn();}finally{await db.exec('reset role;rollback');}});
   await scenario('name normalization and case comparison agree for Unicode whitespace, expansions and context',async()=>{
-    const corpus=['\ufeffAlice','Ali\ufeffce','Alice\ufeff','İ','i\u0307','ΟΣ','ος','οσ','名前','Ａ\u3000Ｂ','😀'];
+    const corpus=['\ufeffAlice','Ali\ufeffce','Alice\ufeff','İ','i\u0307','ΟΣ','ος','οσ','名前','Ａ\u3000Ｂ','😀','\ua7ce','\ua7cf','\u0378','\ud800'];
     for(let i=1;i<=0x10ffff;i++){
       if(i>=0xd800&&i<=0xdfff)continue;
       const c=String.fromCodePoint(i);
-      if(c.toLowerCase()!==c||c.normalize('NFKC')!==c||/\s/u.test(c))corpus.push('A'+c+'B',c);
+      if(M.supportedName(c)&&(c.toLowerCase()!==c||c.normalize('NFKC')!==c||/\s/u.test(c)))corpus.push('A'+c+'B',c);
     }
-    const rows=(await db.query("select value,toki_private.normalize_name(value) as normalized,toki_private.name_key(value) as key from jsonb_array_elements_text($1)",[corpus])).rows;
-    for(const r of rows){assert.equal(r.normalized,M.normalizeName(r.value),'normalize '+JSON.stringify(r.value));assert.equal(r.key,M.nameKey(r.value),'case '+JSON.stringify(r.value));}
+    const rows=(await db.query("select value,toki_private.normalize_name(value) as normalized,toki_private.name_key(value) as key,toki_private.supported_name(value) as supported from jsonb_array_elements_text($1)",[corpus.filter(c=>c!=='\ud800')])).rows;
+    for(const r of rows){assert.equal(r.supported,M.supportedName(r.value));if(r.supported){assert.equal(r.normalized,M.normalizeName(r.value),'normalize '+JSON.stringify(r.value));assert.equal(r.key,M.nameKey(r.value),'case '+JSON.stringify(r.value));}}
+    assert.equal(M.supportedName('\ud800'),false);
   });
   await scenario('crafted Unicode payloads are refused without poisoning the board or changing its version',async()=>{
     await auth(1);const before=await rpc('read',{p_company:c.id});
-    for(const names of [['Alice\ufeff'],['Ali\ufeffce'],['İ','i\u0307'],['ΟΣ','ος'],['A\u0085B']]){
+    for(const names of [['Alice\ufeff'],['Ali\ufeffce'],['İ','i\u0307'],['ΟΣ','ος'],['A\u0085B'],['\ua7ce'],['\u0378']]){
       const payload={schemaVersion:4,people:names,groups:[],events:[],meetings:[]};
       assert.equal(M.valid(payload),false);
       assert.equal((await rpc('save',{p_company:c.id,p_payload:payload,p_version:before.version})).message,'INVALID');
