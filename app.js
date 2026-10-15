@@ -27,7 +27,7 @@
   let excludedGroups={};
   try{const saved=JSON.parse(localStorage.getItem(prefKey('excluded'))||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))excludedGroups=saved;}catch{}
   const excluded=id=>Array.isArray(excludedGroups[id])?excludedGroups[id].filter(n=>typeof n==='string'):[];
-  function toggleMember(group,name){if(drag||rowDrag?.active||busy)return;const values=new Set(excluded(group));if(values.has(name))values.delete(name);else values.add(name);excludedGroups[group]=[...values];try{localStorage.setItem(prefKey('excluded'),JSON.stringify(excludedGroups));}catch{}render();}
+  function toggleMember(group,name){if(drag||rowDrag?.active||busy)return;const values=new Set(excluded(group));if(values.has(name))values.delete(name);else values.add(name);Object.defineProperty(excludedGroups,group,{value:[...values],writable:true,enumerable:true,configurable:true});try{localStorage.setItem(prefKey('excluded'),JSON.stringify(excludedGroups));}catch{}render();}
   let collapsed=new Set();
   try{collapsed=new Set(JSON.parse(localStorage.getItem(prefKey('collapsed'))||"[]"));}catch{}
   availability.forEach((days,person)=>days.forEach((value,d)=>value.split(",").filter(Boolean).forEach((range,n)=>{const [start,end]=range.split("-").map(minute);events.push({id:`seed-${person}-${d}-${n}`,person,date:dates[d],start,end});})));

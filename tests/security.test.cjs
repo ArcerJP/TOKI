@@ -1,5 +1,13 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),http=require('node:http');
 const {JSDOM}=require('jsdom');
+test('untrusted company and Google profile names render as text, never HTML',async t=>{
+  const dom=new JSDOM(fs.readFileSync('index.html','utf8'),{url:'https://example.test',runScripts:'outside-only'}),w=dom.window,d=w.document;t.after(()=>w.close());
+  const name='<img src=x onerror="alert(1)">',company={id:'a',name,code:'a'.repeat(32),role:'admin',status:'active'};
+  w.TokiShared={enabled:true,companyAccess:true,user:{email:'admin@example.test'},company,companies:[company],pendingCode:'',manage:async()=>({members:[{id:'u',name,email:'member@example.test',role:'member',status:'active'}],invites:[]})};
+  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+  w.eval(fs.readFileSync('company-ui.js','utf8'));w.TokiCompanyUI().render();await d.getElementById('company-button').onclick();
+  assert.equal(d.querySelectorAll('img,script:not([src])').length,0);assert.equal(d.getElementById('company-dialog-title').textContent,name);assert.ok(d.getElementById('company-members').textContent.includes(name));
+});
 test('only top-level pages expose the UI; published scripts match the explicit CSP',()=>{
   const source=fs.readFileSync('security.js','utf8');
   for(const framed of [false,true]){
