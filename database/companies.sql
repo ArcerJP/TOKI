@@ -147,6 +147,16 @@ begin
       on conflict(company_id,email) do update set role='member',expires_at=now()+interval '7 days';
   elsif p_action='cancel_invite' then
     delete from toki_private.company_invites where company_id=c.id and email=lower(btrim(p_email));
+  elsif p_action='transfer_admin' then
+    -- The company lock and transaction make the handoff all-or-nothing.
+    -- Never accept an email or a caller-supplied previous administrator ID.
+    select * into target from toki_private.company_members where company_id=c.id and user_id=p_member;
+    if target.user_id is null or target.user_id=uid or target.status<>'active'
+      or not exists(select 1 from auth.users u where u.id=target.user_id and u.email_confirmed_at is not null and (u.banned_until is null or u.banned_until<=now()))
+      or not exists(select 1 from auth.identities i where i.user_id=target.user_id and i.provider='google') then raise exception 'INVALID'; end if;
+    update toki_private.company_members set role=case when user_id=target.user_id then 'admin' else 'member' end
+      where company_id=c.id and user_id in (uid,target.user_id);
+    return jsonb_build_object('role','member');
   elsif p_action in ('approve','block','role') then
     select * into target from toki_private.company_members where company_id=c.id and user_id=p_member;
     if target.user_id is null then raise exception 'INVALID'; end if;
@@ -250,7 +260,7 @@ begin
   end if;
   -- Subtransaction rolls back failed mutations without losing the attempt count.
   begin
-    if p_action is null or p_action not in ('read','save','list','join','create','members','invite','cancel_invite','approve','block','role')
+    if p_action is null or p_action not in ('read','save','list','join','create','members','invite','cancel_invite','approve','block','role','transfer_admin')
       or length(p_code)>64 or length(p_name)>80 or length(p_email)>254 or length(p_role)>10
       or (p_payload is not null and (p_action<>'save' or octet_length(p_payload::text)>2097152)) then raise exception 'INVALID'; end if;
     result:=toki_private.company_action(p_action,p_company,p_code,p_name,p_member,p_email,p_role,p_payload,p_version);

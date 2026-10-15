@@ -11,7 +11,13 @@
 .company-member strong, .company-member span { flex-basis:100%; overflow-wrap:anywhere; }
 .company-member button { min-height:44px; }
 .company-code { overflow-wrap:anywhere; user-select:all; font-variant-numeric:tabular-nums; }
-#company-button { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.account-button, #mobile-app .account-button { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; min-width:44px; padding:8px; border-radius:50%; flex:none; }
+.account-icon { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; }
+#company-admin-controls { border:0; padding:0; margin:0; min-width:0; }
+.company-transfer { border-top:1px solid #dce5e2; margin-top:24px; padding-top:12px; }
+.company-transfer select { width:100%; min-width:0; }
+.company-transfer-confirmation { background:#faf4ed; border:1px solid #e7d4b9; border-radius:10px; padding:16px; overflow-wrap:anywhere; }
+#company-admin-status { color:#245c4b; overflow-wrap:anywhere; }
 .group-view-choices { display:grid; gap:4px; max-height:50dvh; overflow:auto; margin-block:12px; }
 .group-view-choices label, .group-view-all { display:flex; gap:12px; align-items:center; min-height:44px; padding:8px 12px; border-radius:8px; cursor:pointer; }
 .group-view-choices label:hover, .group-view-all { background:#edf4f1; }

@@ -45,7 +45,13 @@
   const remember=()=>{write(PROFILE,profile());write(PREFIX+user.id+':companies',companies);};
   async function listCompanies(){
     const data=await rpc('list');if(!Array.isArray(data)||!data.every(validCompany))throw error(messages.INVALID,'INVALID');
-    companies=data;remember();state();return companies;
+    companies=data;
+    if(company){
+      const current=companies.find(c=>c.id===company.id&&c.status==='active');
+      if(current)company=current;
+      else {remove(companyKey(company.id));reset();company=null;}
+    }
+    remember();state();return companies;
   }
   function accept(board){cacheBoard(board);emit('board',board);connection(true);}
   function failed(failure){
@@ -158,7 +164,17 @@
     });
   }
   async function join(code){await rpc('join',{p_code:code});remove(PREFIX+'join-code');return listCompanies();}
-  async function manage(action,extra={}){if(!company)throw error(messages.COMPANY,'COMPANY');const value=await rpc(action,{p_company:company.id,...extra});if(action!=='members')await listCompanies();return value;}
+  async function manage(action,extra={}){
+    if(!company)throw error(messages.COMPANY,'COMPANY');
+    const value=await rpc(action,{p_company:company.id,...extra});
+    if(action==='transfer_admin'){
+      // The committed response is authoritative; a subsequent list request must
+      // not make a completed transfer look like a failed operation.
+      company={...company,role:'member'};
+      companies=companies.map(c=>c.id===company.id?company:c);remember();state();
+    }else if(action!=='members')await listCompanies();
+    return value;
+  }
   async function save(payload,version){
     if(!online||!company)throw error(messages.NETWORK,'NETWORK');
     try{const board=await rpc('save',{p_company:company.id,p_payload:payload,p_version:version});cacheBoard(board);connection(true);return board;}

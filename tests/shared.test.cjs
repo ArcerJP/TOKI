@@ -64,6 +64,29 @@ test('returning online rechecks membership before restoring edits',async()=>{
   const e=environment();await e.init();await e.api.selectCompany('a');e.fail('NETWORK');await e.api.refresh();assert.equal(e.api.online,false);
   const resets=e.resets.length;e.fail(null);await e.listeners.online();assert.equal(e.api.online,true);assert.equal(e.calls.at(-2).args.p_action,'list');assert.equal(e.resets.length,resets,'keep the current editor until a different board version arrives');
 });
+
+test('company role changes update the open account and transfer success does not depend on a second request',async()=>{
+  const e=environment();let role='admin';
+  e.handle((name,args)=>args.p_action==='list'?{data:choices().map(c=>({...c,role}))}:args.p_action==='transfer_admin'?{data:{role:'member'}}:{data:e.store.a});
+  await e.init();await e.api.selectCompany('a');assert.equal(e.api.company.role,'admin');
+  role='member';await e.api.listCompanies();assert.equal(e.api.company.role,'member');
+  role='admin';await e.api.listCompanies();const count=e.calls.length;
+  await e.api.manage('transfer_admin',{p_member:'next-admin'});
+  assert.equal(e.calls.length,count+1);assert.equal(e.calls.at(-1).args.p_company,'a');
+  assert.equal(e.api.company.role,'member');assert.equal(e.accounts.at(-1).company.role,'member');
+  assert.equal(JSON.parse(e.storage.get('toki-company-v1:u1:companies')).find(c=>c.id==='a').role,'member');
+  e.handle(()=>({data:choices().filter(c=>c.id!=='a')}));await e.api.listCompanies();
+  assert.equal(e.api.company,null);assert.equal(e.storage.has('toki-company-v1:u1:a'),false);
+});
+
+test('failed or stale transfers never apply a local demotion to another company',async()=>{
+  const e=environment();await e.init();await e.api.selectCompany('a');e.fail('DENIED');
+  await assert.rejects(e.api.manage('transfer_admin',{p_member:'next-admin'}),x=>x.code==='DENIED');assert.equal(e.api.company.id,'a');
+  e.fail(null);let release;
+  e.handle((name,args)=>args.p_action==='transfer_admin'?new Promise(resolve=>release=resolve):{data:e.store.b});
+  const request=e.api.manage('transfer_admin',{p_member:'next-admin'}),rejected=assert.rejects(request,x=>x.code==='STALE');
+  await e.api.selectCompany('b');release({data:{role:'member'}});await rejected;assert.equal(e.api.company.id,'b');
+});
 test('revocation clears the current board and its offline snapshot',async()=>{
   const e=environment();await e.init();await e.api.selectCompany('a');const before=e.resets.length;e.fail('DENIED');await e.api.refresh();
   assert.equal(e.api.company,null);assert.equal(e.api.online,false);assert.ok(e.resets.length>before);assert.equal(e.storage.has('toki-company-v1:u1:a'),false);

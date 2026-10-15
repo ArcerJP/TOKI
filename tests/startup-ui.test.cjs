@@ -53,6 +53,8 @@ for(const width of [1440,390])test(`returning user opens the verified board with
   await e.board();assert.equal(e.gateShown,false);assert.equal(e.$('app-loading').hidden,true);assert.equal(e.$('auth-gate').hidden,true);
   assert.equal(e.$('schedule-app').hidden,false);assert.equal(e.$('mobile-app').hidden,width>767);
   assert.equal(e.w.TokiShared.online,true);
+  assert.equal(e.$('company-button').querySelectorAll('svg.account-icon').length,1);
+  if(width<768)assert.equal(e.$('mobile-app').querySelectorAll('button[aria-label="会社・アカウント"] svg.account-icon').length,1);
   // An explicit switch and a later logout must still show the original controls.
   e.w.TokiShared.leaveView();await flush();assertGate(e);assert.match(e.$('company-list').textContent,/予定表を開く/);
   await e.w.TokiShared.logout();await flush();assertGate(e);assert.equal(e.$('company-login').hidden,false);assert.equal(e.$('company-signed-in').hidden,true);

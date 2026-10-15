@@ -55,6 +55,7 @@ window.TokiMobileUI = function (bridge) {
     const active=root.contains(document.activeElement)?document.activeElement.getAttribute('aria-label'):null;
     const board=ctx.board;
     header.replaceChildren();const brand=el('div','mob-brand');brand.append(el('strong',null,'TOKI'),el('span','mob-status',$('save-status').textContent));header.append(brand);
+    if(!$('company-button').hidden){const account=button('',()=>openShared('company-button'),'会社・アカウント','account-button');account.setAttribute('aria-haspopup','dialog');account.title=$('company-button').title;account.append($('company-button').querySelector('svg').cloneNode(true));brand.append(account);}
     const notice=$('connection-status');if(!notice.hidden)header.append(el('p','mob-notice',notice.textContent));
     if(!$('update-app').hidden)header.append(button('最新版に更新',()=>openShared('update-app')));
     content.replaceChildren();
