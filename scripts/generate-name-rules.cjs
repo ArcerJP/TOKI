@@ -36,7 +36,9 @@ $$;
 revoke all on function toki_private.name_key(text) from public,anon,authenticated;
 -- END GENERATED NAME CASE MAP`;
 const file='database/schema.sql',source=fs.readFileSync(file,'utf8');
-fs.writeFileSync(file,source.replace(/-- BEGIN GENERATED NAME CASE MAP[\s\S]*?-- END GENERATED NAME CASE MAP/,()=>sql));
+const outlined=Array.from({length:36},(_,i)=>String.fromCodePoint(0x1ccd6+i)).join('');
+const compatibility=`normalize(translate(value,${quote(outlined)},${quote(outlined.normalize('NFKC'))}),NFKC)`;
+fs.writeFileSync(file,source.replace(/-- BEGIN GENERATED NAME CASE MAP[\s\S]*?-- END GENERATED NAME CASE MAP/,()=>sql).replace(/normalize\((?:translate\(value,'[^']*','[^']*'\)|value),NFKC\)/,()=>compatibility));
 const modelFile='model.js',model=fs.readFileSync(modelFile,'utf8');
 const jsRange=characterClass(n=>'\\u{'+n.toString(16)+'}');
 const js=`// BEGIN GENERATED NAME RULES (Unicode ${process.versions.unicode})

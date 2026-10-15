@@ -42,7 +42,7 @@ revoke all on function toki_private.js_length(text) from public,anon,authenticat
 -- ECMAScript whitespace, including BOM, independent of the database locale.
 create or replace function toki_private.normalize_name(value text)
 returns text language sql immutable strict set search_path='' as $$
-  select btrim(regexp_replace(normalize(value,NFKC),U&'[\0009\000a\000b\000c\000d\0020\00a0\1680\2000-\200a\2028\2029\202f\205f\3000\feff]+',' ','g'));
+  select btrim(regexp_replace(normalize(translate(value,'𜳖𜳗𜳘𜳙𜳚𜳛𜳜𜳝𜳞𜳟𜳠𜳡𜳢𜳣𜳤𜳥𜳦𜳧𜳨𜳩𜳪𜳫𜳬𜳭𜳮𜳯𜳰𜳱𜳲𜳳𜳴𜳵𜳶𜳷𜳸𜳹','ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'),NFKC),U&'[\0009\000a\000b\000c\000d\0020\00a0\1680\2000-\200a\2028\2029\202f\205f\3000\feff]+',' ','g'));
 $$;
 revoke all on function toki_private.normalize_name(text) from public,anon,authenticated;
 -- BEGIN GENERATED NAME CASE MAP (Unicode 16.0)
