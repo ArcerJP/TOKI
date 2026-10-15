@@ -147,6 +147,14 @@ begin
       on conflict(company_id,email) do update set role='member',expires_at=now()+interval '7 days';
   elsif p_action='cancel_invite' then
     delete from toki_private.company_invites where company_id=c.id and email=lower(btrim(p_email));
+  elsif p_action='remove_member' then
+    select * into target from toki_private.company_members where company_id=c.id and user_id=p_member;
+    if target.user_id is null or target.user_id=uid then raise exception 'INVALID'; end if;
+    if target.status<>'blocked' then raise exception 'MEMBER_NOT_STOPPED'; end if;
+    -- Remove outstanding invitations as well, so list cannot silently re-enrol them.
+    -- Keep the Google account, other memberships and the schedule board untouched.
+    delete from toki_private.company_invites where company_id=c.id and email=(select lower(email) from auth.users where id=p_member);
+    delete from toki_private.company_members where company_id=c.id and user_id=p_member;
   elsif p_action='transfer_admin' then
     -- The company lock and transaction make the handoff all-or-nothing.
     -- Never accept an email or a caller-supplied previous administrator ID.
@@ -260,12 +268,12 @@ begin
   end if;
   -- Subtransaction rolls back failed mutations without losing the attempt count.
   begin
-    if p_action is null or p_action not in ('read','save','list','join','create','members','invite','cancel_invite','approve','block','role','transfer_admin')
+    if p_action is null or p_action not in ('read','save','list','join','create','members','invite','cancel_invite','approve','block','role','transfer_admin','remove_member')
       or length(p_code)>64 or length(p_name)>80 or length(p_email)>254 or length(p_role)>10
       or (p_payload is not null and (p_action<>'save' or octet_length(p_payload::text)>2097152)) then raise exception 'INVALID'; end if;
     result:=toki_private.company_action(p_action,p_company,p_code,p_name,p_member,p_email,p_role,p_payload,p_version);
   exception when others then
-    failure:=case when SQLERRM in ('AUTH','DENIED','COMPANY','CONFLICT','LAST_ADMIN','LIMIT','JOIN_LIMIT','REQUEST_EXPIRED') then SQLERRM else 'INVALID' end;
+    failure:=case when SQLERRM in ('AUTH','DENIED','COMPANY','CONFLICT','LAST_ADMIN','LIMIT','JOIN_LIMIT','REQUEST_EXPIRED','MEMBER_NOT_STOPPED') then SQLERRM else 'INVALID' end;
     perform set_config('response.status',case failure when 'AUTH' then '401' when 'DENIED' then '403' when 'CONFLICT' then '409' else '400' end,true);
     result:=jsonb_build_object('message',failure,'code','TOKI_'||failure);
   end;
