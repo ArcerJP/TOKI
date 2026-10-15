@@ -43,6 +43,10 @@
     <script src="pwa.js" defer></script>
   </head>
   <body>
+    <section id="app-loading" class="app-loading" role="status">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">▤</span><strong>TOKI</strong></div>
+      <p>予定表を読み込み中…</p>
+    </section>
     <main id="mobile-app" hidden aria-label="TOKI スマートフォン版"></main>
     <section id="auth-gate" class="auth-gate" hidden>
       <div class="auth-card">
@@ -73,7 +77,7 @@
         </div>
       </div>
     </section>
-    <main class="app" id="schedule-app">
+    <main class="app" id="schedule-app" hidden>
       <header class="topbar">
         <div class="brand">
           <span class="brand-icon" aria-hidden="true">▤</span

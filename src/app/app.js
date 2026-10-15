@@ -7,8 +7,10 @@
   const M=window.TokiModel,A=window.TokiAvailability,S=window.TokiSchedule;
   let rowDrag=null,googleImportUI=null,meetingMenu=null,pendingLocalBoard=null,mobile=null,groupView=null,companyUI=null;
   let groups=[],ready=!shared.enabled,busy=false,revision=null,pendingBoard=null,lastSaveError='',accountGeneration=0;
+  let initializing=shared.enabled;
   $("schedule-app").hidden=shared.enabled;
-  $("auth-gate").hidden=!shared.enabled;
+  $("auth-gate").hidden=true;
+  $("app-loading").hidden=!initializing;
   $("copy-link").hidden=!shared.enabled;
   if(shared.enabled)$("storage-note").textContent="参加を許可された会社のメンバーが予定を閲覧・編集できます。変更は約5秒ごとに同期します。オフラインでは保存済みの予定を閲覧できます。";
   const START=480, END=1440, SPAN=END-START, KEY="toki-availability-v3",LEGACY_KEY="toki-availability-2026-v1",VIEW_KEY="toki-selected-date";
@@ -89,7 +91,7 @@
     if(busy||drag||meetingMenu?.pressing||rowDrag?.active||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
     const changed=revision!==null;assign(payload);revision=board.version;undo=[];redo=[];ready=true;
     if(!changed){try{excludedGroups=JSON.parse(localStorage.getItem(prefKey('excluded'))||'{}');collapsed=new Set(JSON.parse(localStorage.getItem(prefKey('collapsed'))||'[]'));}catch{excludedGroups={};collapsed=new Set();}}
-    $("auth-gate").hidden=true;$("schedule-app").hidden=false;$("save-status").textContent="共有保存済み";render();if(changed)toast("他のメンバーの変更を反映しました");
+    $("app-loading").hidden=true;$("auth-gate").hidden=true;$("schedule-app").hidden=false;$("save-status").textContent="共有保存済み";render();if(changed)toast("他のメンバーの変更を反映しました");
   }
   function applyPending(){
     if(busy||drag||meetingMenu?.pressing||rowDrag?.active||dialogOpen())return;
@@ -341,17 +343,19 @@
         for(const id of ['roster-name','share-url','company-invite-email'])$(id).value='';
         for(const id of ['meeting-title','meeting-time','meeting-menu-title','meeting-menu-time','meeting-menu-scope','google-import-summary','company-dialog-title','company-dialog-code','company-dialog-user'])if($(id))$(id).textContent='';
         document.querySelectorAll('textarea').forEach(n=>{n.value='';});
-        $("schedule-app").hidden=true;$("mobile-app").hidden=true;$("auth-gate").hidden=false;
+        $("schedule-app").hidden=true;$("mobile-app").hidden=true;$("auth-gate").hidden=initializing;
+        $("app-loading").hidden=!initializing;
         mobile?.reset();mobile?.refresh();
       },
       warning:toast,
       state:connectionState,
       error:error=>{
         $("auth-message").textContent=error.message;$("auth-retry").hidden=false;
-        if(error.code==="LINK"){ready=false;$("schedule-app").hidden=true;$("auth-gate").hidden=false;}
+        if(error.code==="LINK"){ready=false;$("schedule-app").hidden=true;$("auth-gate").hidden=initializing;}
       }
     });}
     catch(error){$("auth-message").textContent=error.message;$("auth-retry").hidden=false;}
+    finally{initializing=false;$("app-loading").hidden=true;$("auth-gate").hidden=ready;}
   }
   render();if(loadFailed)toast("保存データを読み込めないため、元の予定を表示しています。");
 })();
