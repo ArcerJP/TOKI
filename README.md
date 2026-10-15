@@ -2,6 +2,22 @@
 
 可能時間を人・グループ別に共同編集するガントチャート。HTML・CSS・JavaScriptは別ファイルです。
 
+## 開発ワークスペース
+
+既存アプリの配置を維持し、設計・資料・作業記録を分けています。人向けの全体図は [フォルダ構成](docs/architecture/directory-map.md)、設計意図は [5つのパターン](docs/architecture/five-patterns.md)、AI向け入口は [AGENTS.md](AGENTS.md) です。
+
+作業は [WORKFLOW](work/WORKFLOW.md) に従い、必要なSkillを `.agents/skills` から選びます。資料原本・動的な作業記録・私的な設定はGit除外。これらの開発用ファイルはWeb配信・PWAキャッシュの対象に含めません。詳細は [正本の定義](docs/architecture/source-of-truth.md) を参照してください。
+
+```text
+.agents/skills/  作業手順
+docs/           正式仕様・設計・ADR
+knowledge/      raw原本 → wiki派生知識
+work/           inbox → notebook → outbox → archive
+memory/         一時メモ（長期参照はMEMORY.md）
+```
+
+5つの柱は、指示の階層化、原本と派生知識の分離、調査→計画→実装→検証、役割と記憶の分離、taskの状態管理です。現在のAI向け構成は [Codex](docs/architecture/codex-runtime.md) 用で、ルート・領域別AGENTSと5つのSkillを使います。Gitは既存のmain・originを使い、Conventional Commitsで変更を記録します。構造追加は [拡張方針](docs/architecture/extension-policy.md)、他ツールへの移行は [移植方針](docs/architecture/portability.md) に従います。
+
 ## 開く・共有する
 
 Googleログイン後、管理者に招待・承認された会社の予定表を開きます。会社コードで参加を申請でき、管理者が承認するまでは予定を取得できません。「会社URLをコピー」で参加先を共有できます。会社URLを知っているだけでは閲覧・編集できません。
