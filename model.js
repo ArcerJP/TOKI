@@ -8,14 +8,14 @@
   function shiftDate(value,days){if(!validDate(value)||!Number.isInteger(days))return null;const d=new Date(value+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+days);if(!Number.isFinite(d.getTime()))return null;const result=d.toISOString().slice(0,10);return validDate(result)?result:null;}
   function weekDates(value){if(!validDate(value))throw Error('日付を確認してください。');const start=shiftDate(value,-new Date(value+'T00:00:00Z').getUTCDay());return Array.from({length:7},(_,i)=>shiftDate(start,i));}
   const normalizeName = value => value.normalize("NFKC").trim().replace(/\s+/gu, " ");
-  const nameKey = value => normalizeName(value).toLowerCase();
+  const nameKey = value => normalizeName(value).toLowerCase().replace(/\u03c2/gu,'\u03c3');
   const rowKey = event => event.group !== undefined ? `g:${event.group}` : `p:${event.person}`;
   const owner = key => key.startsWith("g:") ? {group:key.slice(2)} : {person:Number(key.slice(2))};
   function moveEvent(event, key) { const next={...event}; delete next.person; delete next.group; return {...next,...owner(key)}; }
   function upgrade(board) { const next={...clone(board),schemaVersion:3,groups:clone(board.groups||[])};delete next.dates;return next; }
   function validLegacy(board) {
     if(!board||board.schemaVersion!==3||!Array.isArray(board.people)||board.people.length>100||!Array.isArray(board.groups)||board.groups.length>50||!Array.isArray(board.events)||board.events.length>2000)return false;
-    const name=n=>typeof n==='string'&&n===normalizeName(n)&&n.length>0&&n.length<=40&&!/[\x00-\x1f\x7f]/u.test(n);
+    const name=n=>typeof n==='string'&&n===normalizeName(n)&&n.length>0&&n.length<=40&&!/[\x00-\x1f\x7f-\x9f]/u.test(n);
     const unique=values=>new Set(values).size===values.length;
     const person=i=>Number.isInteger(i)&&i>=0&&i<board.people.length;
     if(!board.people.every(name)||!unique(board.people.map(nameKey)))return false;

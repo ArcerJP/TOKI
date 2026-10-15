@@ -5,7 +5,7 @@ function environment({storage=new Map(),identity='u1',offline=false,search='',ha
   let failure=null,callback,handler;const calls=[],boards=[],resets=[],errors=[],states=[],accounts=[],listeners={},navigator={onLine:!offline};
   const store={a:{companyId:'a',payload:payload(),version:1},b:{companyId:'b',payload:{...payload(),people:['Other company']},version:1}};
   const session=()=>identity?{user:{id:identity,email:identity+'@example.com'}}:null;
-  const client={auth:{onAuthStateChange:fn=>callback=fn,getSession:async()=>({data:{session:session()},error:authError}),signInWithOAuth:async args=>{calls.push({oauth:args});return {};},signOut:async()=>{identity=null;callback('SIGNED_OUT',null);return {};}},async rpc(name,args){
+  const client={auth:{dispose:async()=>{},onAuthStateChange:fn=>callback=fn,getSession:async()=>({data:{session:session()},error:authError}),signInWithOAuth:async args=>{calls.push({oauth:args});return {};},signOut:async()=>{identity=null;callback('SIGNED_OUT',null);return {};}},async rpc(name,args){
     calls.push({name,args});if(handler)return handler(name,args);
     if(failure)return {status:failure==='NETWORK'?0:400,error:{message:failure}};
     if(args.p_action==='list')return {data:choices()};
@@ -15,9 +15,10 @@ function environment({storage=new Map(),identity='u1',offline=false,search='',ha
   const localStorage={get length(){return storage.size;},key:i=>[...storage.keys()][i],getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
   const window={TOKI_CONFIG:{url:'https://example.supabase.co',publishableKey:'public-test',boardId:'october-2026',siteUrl:'https://example.test/'},TokiSupabase:{createClient:()=>client},addEventListener:(type,fn)=>listeners[type]=fn};
   vm.runInNewContext(fs.readFileSync('model.js','utf8'),{window});
+  window.TokiAuthStorage=require('../auth-storage.js');
   const document={hidden:false,createElement:()=>({}),head:{append:s=>queueMicrotask(()=>s.onload())},addEventListener(){}};
   const replacedUrls=[];
-  vm.runInNewContext(fs.readFileSync('shared.js','utf8'),{window,document,navigator,localStorage,location:{protocol:'https:',hostname:'example.test',search,hash,pathname:'/'},history:{replaceState:(state,title,url)=>replacedUrls.push(url)},URLSearchParams,setInterval:()=>0,setTimeout});
+  vm.runInNewContext(fs.readFileSync('shared.js','utf8'),{window,document,navigator,localStorage,location:{protocol:'https:',hostname:'example.test',search,hash,pathname:'/'},history:{replaceState:(state,title,url)=>replacedUrls.push(url)},URL,URLSearchParams,setInterval:()=>0,setTimeout});
   return {api:window.TokiShared,calls,boards,resets,errors,states,accounts,storage,store,navigator,listeners,replacedUrls,init:()=>window.TokiShared.initialize({board:b=>boards.push(b),reset:()=>resets.push(1),error:e=>errors.push(e),state:s=>states.push(s),account:a=>accounts.push(a)}),fail:x=>failure=x,handle:fn=>handler=fn,async changeUser(id){identity=id;callback('SIGNED_IN',session());await new Promise(r=>setTimeout(r,10));}};
 }
 
@@ -69,6 +70,20 @@ test('revocation clears the current board and its offline snapshot',async()=>{
 test('logout clears all company caches for that user and returns to the sign-in gate',async()=>{
   const e=environment();await e.init();await e.api.selectCompany('a');await e.api.selectCompany('b');await e.api.logout();
   assert.equal(e.api.user,null);assert.equal(e.api.company,null);assert.ok([...e.storage.keys()].every(k=>!k.startsWith('toki-company-v1:u1:')));
+});
+
+test('logout ignores late authentication callbacks and a logout in another tab clears the open board',async()=>{
+  const e=environment();await e.init();await e.api.selectCompany('a');await e.api.logout();
+  await e.changeUser('u1');assert.equal(e.api.user,null);assert.equal(e.api.company,null);
+  const other=environment();await other.init();await other.api.selectCompany('a');
+  const key='sb-example-auth-token-logout-epoch';other.storage.set(key,'logout-in-another-tab');other.listeners.storage({key});
+  assert.equal(other.api.user,null);assert.equal(other.api.company,null);assert.equal(other.storage.has('toki-company-v1:u1:a'),false);
+});
+
+test('application saturation explains the invitation path without disabling existing-company access',async()=>{
+  const e=environment();await e.init();await e.api.selectCompany('a');
+  e.handle(()=>({status:429,error:{message:'JOIN_LIMIT'}}));await assert.rejects(e.api.join('x'),x=>x.code==='JOIN_LIMIT'&&x.message.includes('招待'));
+  e.handle(null);await e.api.refresh();assert.equal(e.api.online,true);
 });
 test('late reads and writes from the previous company cannot replace the newly selected board',async()=>{
   for(const operation of ['read','save']){

@@ -5,7 +5,7 @@ const {createHash} = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const assets = [
   'index.html', 'styles.css', 'security.js', 'app.js', 'model.js', 'row-drag.js', 'data.js',
-  'config.js', 'shared.js', 'pwa.js', 'manifest.webmanifest',
+  'config.js', 'auth-storage.js', 'shared.js', 'pwa.js', 'manifest.webmanifest',
   'availability.js', 'schedule.js', 'availability-ui.js', 'meeting-menu.js', 'meeting-export-ui.js',
   'calendar-import.js', 'google-calendar.js', 'google-import-ui.js',
   'mobile.css', 'mobile-model.js', 'mobile-ui.js',
