@@ -114,3 +114,12 @@ test('only popup-blocking errors advise allowing popups',async()=>{
   const e=environment();e.setPopupError('popup_failed_to_open');await assert.rejects(e.api.login(),/ポップアップを許可/);
   e.setPopupError('unknown');await assert.rejects(e.api.login(),error=>!error.message.includes('ポップアップを許可'));
 });
+
+test('logout invalidates a pending authorization and its late callback cannot replace a new account',async()=>{
+  const e=environment(),pending=e.api.login(),oldCallback=e.config.callback;
+  const rejected=assert.rejects(pending,/中止/);e.api.logout();await rejected;
+  assert.equal(e.api.connected,false);
+  e.setAccess({access_token:'new-account-token',expires_in:3600});await e.api.login();
+  oldCallback({access_token:'old-account-token',expires_in:3600});
+  await e.api.fetchBusy(range,['personal']);assert.equal(e.calls.at(-1).options.headers.Authorization,'Bearer new-account-token');
+});

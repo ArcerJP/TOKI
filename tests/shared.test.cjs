@@ -33,6 +33,16 @@ test('SDK authentication errors are visible without exposing their raw message',
   const e=environment({identity:null,authError:{status:400,message:'private-code'}});await e.init();
   assert.equal(e.errors[0].code,'OAUTH');assert.equal(e.errors[0].message.includes('private-code'),false);assert.equal(e.boards.length,0);
 });
+
+test('rate limiting backs off locally and an HTTP permission denial clears cached data',async()=>{
+  const e=environment();await e.init();await e.api.selectCompany('a');
+  e.handle(()=>({status:403,error:{message:'Forbidden'}}));await e.api.refresh();
+  assert.equal(e.api.company,null);assert.equal(e.storage.has('toki-company-v1:u1:a'),false);
+  const limited=environment();await limited.init();limited.handle(()=>({status:429,error:{message:'RATE_LIMIT'}}));
+  await assert.rejects(limited.api.join('a'),x=>x.code==='RATE_LIMIT');const count=limited.calls.length;
+  await assert.rejects(limited.api.join('b'),x=>x.code==='RATE_LIMIT');assert.equal(limited.calls.length,count);
+  assert.equal(limited.api.createCompany,undefined);
+});
 test('login is required; a sharing link is never used as authorization',async()=>{
   const e=environment({identity:null});await e.init();assert.equal(e.calls.length,0);await assert.rejects(e.api.join('a'),x=>x.code==='AUTH');
   await e.api.login('a');assert.equal(e.calls[0].oauth.provider,'google');assert.equal(e.calls[0].oauth.options.redirectTo,'https://example.test/');assert.equal(e.api.user,null);

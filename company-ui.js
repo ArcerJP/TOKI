@@ -21,7 +21,7 @@ window.TokiCompanyUI=()=>{
       else row.append(el('span',c.status==='pending'?'管理者の承認待ち':'参加が許可されていません'));
       container.append(row);
     }
-    $('company-login').disabled=pending;$('company-join').disabled=pending;$('company-create-button').disabled=pending;
+    $('company-login').disabled=pending;$('company-join').disabled=pending;
     if(user&&!company)$('auth-message').textContent=list.some(c=>c.status==='active')?'開く会社を選んでください。':'会社コードで参加申請するか、管理者からの招待をご確認ください。';
     else if(!user)$('auth-message').textContent='Googleで本人確認後、招待・承認済みの会社だけにアクセスできます。';
   }
@@ -29,7 +29,6 @@ window.TokiCompanyUI=()=>{
   $('company-join').onclick=()=>run(()=>shared.join($('company-code').value));
   $('company-refresh').onclick=()=>run(()=>shared.listCompanies());
   $('company-logout').onclick=()=>run(()=>shared.logout());
-  $('company-create-button').onclick=()=>run(()=>shared.createCompany($('company-new-name').value));
   async function adminList(){
     const company=shared.company,d=$('company-dialog');if(!company)return;
     $('company-dialog-title').textContent=company.name;$('company-dialog-code').textContent=company.code;$('company-dialog-user').textContent=shared.user.email;
@@ -45,7 +44,7 @@ window.TokiCompanyUI=()=>{
         if(m.status!=='blocked')row.append(button('アクセスを停止',()=>{if(confirm(m.email+'の会社へのアクセスを停止しますか？端末のオフラインデータは即時には消去できません。'))action('block',{p_member:m.id});}));
         $('company-members').append(row);
       }
-      for(const invite of data.invites){const row=el('div');row.className='company-choice';row.append(el('span',invite.email+'（招待済み）'),button('招待を取り消す',()=>action('cancel_invite',{p_email:invite.email})));$('company-invites').append(row);}
+      for(const invite of data.invites){const row=el('div');row.className='company-choice';row.append(el('span',invite.email+(Date.parse(invite.expiresAt)<=Date.now()?'（期限切れ）':'（招待済み）')),button('招待を取り消す',()=>action('cancel_invite',{p_email:invite.email})));$('company-invites').append(row);}
     }catch(e){$('company-admin-error').textContent=e.message;}
   }
   $('company-button').onclick=adminList;

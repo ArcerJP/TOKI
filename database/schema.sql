@@ -32,10 +32,18 @@ create table if not exists toki_private.registrations (
 revoke all on toki_private.share_links, toki_private.registrations from public, anon, authenticated;
 alter table toki_private.share_links enable row level security;
 alter table toki_private.registrations enable row level security;
+-- Match JavaScript string.length so accepted data cannot make every client reject a board.
+create or replace function toki_private.js_length(value text)
+returns integer language sql immutable strict set search_path='' as $$
+  select coalesce(sum(case when ascii(c)>65535 then 2 else 1 end),0)::integer
+  from regexp_split_to_table(value,'') c;
+$$;
+revoke all on function toki_private.js_length(text) from public,anon,authenticated;
 create or replace function toki_private.validate_board()
 returns trigger language plpgsql security invoker set search_path = '' as $$
 declare item jsonb; person_name jsonb; grp jsonb; member jsonb;
 begin
+  if octet_length(new.payload::text)>2097152 then raise exception 'Invalid schedule size'; end if;
   if jsonb_typeof(new.payload) is distinct from 'object'
     or jsonb_typeof(new.payload->'people') is distinct from 'array'
     or new.payload->'schemaVersion' is distinct from '4'::jsonb
@@ -44,11 +52,12 @@ begin
     or jsonb_typeof(new.payload->'meetings') is distinct from 'array' then
     raise exception 'Invalid schedule structure';
   end if;
+  if (new.payload - array['schemaVersion','people','groups','events','meetings']) <> '{}'::jsonb then raise exception 'INVALID'; end if;
   if jsonb_array_length(new.payload->'people') not between 0 and 100 or jsonb_array_length(new.payload->'groups') > 50 or jsonb_array_length(new.payload->'events') > 2000 or jsonb_array_length(new.payload->'meetings') > 2000 then
     raise exception 'Invalid schedule size';
   end if;
   for person_name in select value from jsonb_array_elements(new.payload->'people') loop
-    if jsonb_typeof(person_name) <> 'string' or length(person_name#>>'{}') not between 1 and 40 then
+    if jsonb_typeof(person_name) <> 'string' or toki_private.js_length(person_name#>>'{}') not between 1 and 40 then
       raise exception 'NAME_INVALID';
     end if;
   end loop;
@@ -57,9 +66,10 @@ begin
   for grp in select value from jsonb_array_elements(new.payload->'groups') loop
     if jsonb_typeof(grp) is distinct from 'object'
       or jsonb_typeof(grp->'id') is distinct from 'string' or (grp->>'id') !~ '^[a-zA-Z0-9_-]{1,100}$'
-      or jsonb_typeof(grp->'name') is distinct from 'string' or length(grp->>'name') not between 1 and 40
+      or jsonb_typeof(grp->'name') is distinct from 'string' or toki_private.js_length(grp->>'name') not between 1 and 40
       or (grp->>'name') is distinct from btrim(regexp_replace(normalize(grp->>'name',NFKC),'[[:space:]]+',' ','g')) or (grp->>'name') ~ '[[:cntrl:]]'
       or jsonb_typeof(grp->'members') is distinct from 'array' then raise exception 'INVALID'; end if;
+    if (grp - array['id','name','members']) <> '{}'::jsonb or jsonb_array_length(grp->'members')>100 then raise exception 'INVALID'; end if;
     for member in select value from jsonb_array_elements(grp->'members') loop
       if jsonb_typeof(member)<>'number' or (member#>>'{}') !~ '^[0-9]+$' or (member#>>'{}')::integer not between 0 and jsonb_array_length(new.payload->'people')-1 then raise exception 'INVALID'; end if;
     end loop;
@@ -70,7 +80,7 @@ begin
   for item in select value from jsonb_array_elements(new.payload->'events') loop
     if jsonb_typeof(item) <> 'object'
       or jsonb_typeof(item->'id') is distinct from 'string'
-      or length(item->>'id') not between 1 and 100
+      or toki_private.js_length(item->>'id') not between 1 and 100
       or not (item ? 'person') or (item ? 'group') or (item ? 'title') or (item ? 'detail')
       or ((item ? 'person') and (jsonb_typeof(item->'person') is distinct from 'number' or (item->>'person') !~ '^[0-9]+$' or (item->>'person')::integer not between 0 and jsonb_array_length(new.payload->'people')-1))
       or ((item ? 'group') and (jsonb_typeof(item->'group') is distinct from 'string' or not exists(select 1 from jsonb_array_elements(new.payload->'groups') g where g->>'id'=item->>'group')))
@@ -83,6 +93,7 @@ begin
       or (item->>'end')::integer <= (item->>'start')::integer then
       raise exception 'Invalid event';
     end if;
+    if (item - array['id','person','date','start','end']) <> '{}'::jsonb then raise exception 'INVALID'; end if;
     begin
       if (item->>'date')::date not between date '0001-01-07' and date '9999-12-25' then raise exception 'INVALID'; end if;
     exception when invalid_datetime_format or datetime_field_overflow then raise exception 'INVALID';
@@ -93,14 +104,14 @@ begin
   end if;
   for item in select value from jsonb_array_elements(new.payload->'meetings') loop
     if jsonb_typeof(item) is distinct from 'object'
-      or jsonb_typeof(item->'id') is distinct from 'string' or length(item->>'id') not between 1 and 100
+      or jsonb_typeof(item->'id') is distinct from 'string' or toki_private.js_length(item->>'id') not between 1 and 100
       or jsonb_typeof(item->'group') is distinct from 'string' or not exists(select 1 from jsonb_array_elements(new.payload->'groups') g where g->>'id'=item->>'group')
       or jsonb_typeof(item->'date') is distinct from 'string' or (item->>'date') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
       or jsonb_typeof(item->'start') is distinct from 'number' or jsonb_typeof(item->'end') is distinct from 'number'
       or (item->>'start') !~ '^[0-9]+$' or (item->>'end') !~ '^[0-9]+$'
       or (item->>'start')::integer < 480 or (item->>'end')::integer > 1440 or (item->>'end')::integer <= (item->>'start')::integer
       or jsonb_typeof(item->'members') is distinct from 'array' then raise exception 'INVALID'; end if;
-    if jsonb_array_length(item->'members')=0 then raise exception 'INVALID'; end if;
+    if jsonb_array_length(item->'members') not between 1 and 100 or (item - array['id','group','date','start','end','members']) <> '{}'::jsonb then raise exception 'INVALID'; end if;
     begin
       if (item->>'date')::date not between date '0001-01-07' and date '9999-12-25' then raise exception 'INVALID'; end if;
     exception when invalid_datetime_format or datetime_field_overflow then raise exception 'INVALID'; end;
@@ -186,6 +197,7 @@ do $$ begin
   if to_regclass('toki_private.companies') is not null then
     revoke all on function public.toki_share(text,text,uuid,text,jsonb,bigint) from public,anon,authenticated;
     revoke all on function toki_private.share_action(text,text,uuid,text,jsonb,bigint) from public,anon,authenticated;
+    revoke all on schema toki_private from public,anon,authenticated;
   end if;
 end $$;
 commit;

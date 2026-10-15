@@ -13,6 +13,16 @@
 
 会社への参加アカウントと、予定表上の「人」の行は別。承認時に行を勝手に追加せず、既存の人・予定は維持する。
 
+## 新しい会社・団体の作成
+
+一般利用者・会社管理者からの会社作成はAPIで拒否する。新規作成はSupabaseプロジェクトを管理する運営者だけがSQL Editorで行う。
+
+```sql
+select toki_private.provision_company('会社・団体名','初期管理者のGoogleメールアドレス');
+```
+
+返された会社コードを初期管理者に伝える。実行ごとに空の会社を1つ作成するため、同じ依頼を二重実行しない。初期管理者の招待は30日間。メールアドレスを含めた実行用SQLはGitに保存しない。
+
 ## 初期設定・移行の順序
 
 認証設定が完了する前に本番へ新しい画面を公開しない。
@@ -44,6 +54,20 @@
 - 管理操作はその会社の管理者だけ。管理者権限を招待パラメーターで取得できない。会社コードで自分を承認することもできない。
 - テーブルへのAPI直接アクセス、旧 `toki_share` とその内部関数は無効。旧スキーマを再実行しても会社移行後は旧APIを再開しない。
 - 保存は版番号を照合し、同時編集時の上書きを防止。
+- 会社作成は非公開の運営者用関数だけ。会社の管理者に運営者権限は与えない。
+- RPCはアカウント停止・セッションの期限も確認。失敗したリクエストを含め、1アカウント・1分あたり読み取り120回、保存60回、管理操作30回、参加申請5回で制限する。制限時はHTTP 429を返し、画面側も1分待つ。DB内の回数記録は各アカウント最大4行。
+- 参加申請待ちは1人5社、1社50人まで。会社の登録アカウントは停止中を含め500人、招待記録は期限切れを含め100件まで。期限切れの招待は管理画面から取り消せる。上限の変更・不要な登録記録の整理は運営者が対応する。
+- 予定表は2 MiBまで。使用するフィールドだけを許可し、件数・参照先・日付・時刻・文字数をサーバーで検証する。拒否した保存は版番号もデータも変更しない。
+
+## ブラウザー・公開経路の保護
+
+CSPでスクリプト・通信先をTOKI、Supabase、Googleの必要な経路へ制限。任意のインラインスクリプト、eval、外部フォーム送信、プラグイン埋め込みを禁止する。表示文字列はHTMLとして解釈せずtextContent等で設定する。Googleカレンダーの認証待ち中にログアウトした場合、遅れて届く認証結果も破棄する。
+
+GitHub Pagesでは独自のレスポンスヘッダーを設定できないため、埋め込み画面ではUIを非表示にする補助策を使用。ヘッダーの`frame-ancestors 'none'`と同等の保護ではない。独自ドメイン・ヘッダー設定可能なホスティングへ移る場合は、CSPのレスポンスヘッダーと`frame-ancestors 'none'`も設定する。同じ`arcerjp.github.io`の他アプリとはブラウザーのオリジンを共有するため、会社向けの運用ではTOKI専用ドメインへの分離を推奨する。
+
+GitHub ActionsはコミットSHAで固定し、依存関係の監査と全テストが成功した場合だけ公開する。検証ジョブには公開権限を与えず、デプロイジョブに限定する。公開対象は静的ファイルの許可リストのみ。
+
+アプリ内の回数制限は、ネットワーク帯域を埋めるDDoSや大量のGoogleアカウント作成を防ぐWAFの代替ではない。Supabase・GitHub側の障害やアカウント侵害は別途対策が必要。運営者のGoogle・GitHub・Supabaseアカウントは多要素認証で保護する。オフライン閲覧と社内全員編集の既存方針は維持する。
 
 ## オフライン・端末保存
 
@@ -66,3 +90,6 @@ Service Workerは公開静的ファイルだけを保存する。Supabase認証�
 - [Supabaseログアウト](https://supabase.com/docs/guides/auth/signout)
 - [Supabase Row Level Security](https://supabase.com/docs/guides/database/postgres/row-level-security)
 - [PGlite](https://pglite.dev/docs/)
+- [Supabase APIの保護](https://supabase.com/docs/guides/api/securing-your-api)
+- [Supabaseセッション](https://supabase.com/docs/guides/auth/sessions)
+- [Google Identity ServicesのCSP設定](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid#content_security_policy)

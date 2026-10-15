@@ -5,10 +5,10 @@
   const LIST_ENDPOINT='https://www.googleapis.com/calendar/v3/users/me/calendarList';
   // Google-provided holiday calendars use these IDs, independently of their display name.
   const isHolidayCalendar=id=>/(?:#holiday@group\.v\.calendar\.google\.com|@holiday\.calendar\.google\.com)$/i.test(id);
-  let sdkPromise,client,token='',expires=0,pendingLogin=false;
+  let sdkPromise,client,token='',expires=0,pendingLogin=false,loginEpoch=0,cancelLogin=null;
   const configured=()=>/^\d+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(window.TOKI_CONFIG?.googleClientId||'');
   const connected=()=>Boolean(token)&&Date.now()<expires;
-  const logout=()=>{token='';expires=0;};
+  const logout=()=>{loginEpoch++;token='';expires=0;pendingLogin=false;const cancel=cancelLogin;cancelLogin=null;cancel?.();};
   function load(){
     if(!configured())return Promise.reject(Error('Googleログインは設定準備中です。管理者がOAuthクライアントIDを設定すると利用できます。'));
     if(location.protocol==='file:')return Promise.reject(Error('Googleログインは公開サイトから利用してください。'));
@@ -27,17 +27,19 @@
   function login(){
     if(!window.google?.accounts?.oauth2)throw Error('Googleログインの読み込みが終わるまでお待ちください。');
     if(pendingLogin)throw Error('Googleのログイン画面を確認してください。');
-    logout();pendingLogin=true;
+    logout();pendingLogin=true;const generation=loginEpoch;
     return new Promise((resolve,reject)=>{
-      const failed=message=>{pendingLogin=false;logout();reject(Error(message));};
+      cancelLogin=()=>reject(Error('Googleログインを中止しました。もう一度ログインしてください。'));
+      const failed=message=>{if(generation!==loginEpoch)return;cancelLogin=null;pendingLogin=false;logout();reject(Error(message));};
       client=window.google.accounts.oauth2.initTokenClient({
         client_id:window.TOKI_CONFIG.googleClientId,scope:SCOPES.join(' '),include_granted_scopes:false,
         callback:response=>{
+          if(generation!==loginEpoch)return;
           if(response.error==='access_denied')return failed('Googleへのアクセスが許可されませんでした。権限の許可を取り消した場合はログインし直してください。「テスト中」「アクセスをブロック」と表示された場合は、管理者にログインするアカウントのテストユーザー登録を依頼してください。');
           if(response.error||!response.access_token||!window.google.accounts.oauth2.hasGrantedAllScopes(response,...SCOPES))return failed('カレンダーの一覧と予定あり／なしを確認する2つの権限が必要です。Googleでログインし直し、両方を許可してください。');
           const lifetime=Number(response.expires_in);
           if(!Number.isFinite(lifetime)||lifetime<=30)return failed('Googleの認証を確認できませんでした。再度ログインしてください。');
-          token=response.access_token;expires=Date.now()+(lifetime-30)*1000;pendingLogin=false;resolve();
+          token=response.access_token;expires=Date.now()+(lifetime-30)*1000;pendingLogin=false;cancelLogin=null;resolve();
         },
         error_callback:failure=>failed(failure.type==='popup_closed'?'Googleログインが完了する前に画面が閉じられました。「テスト中」「アクセスをブロック」と表示された場合は、管理者にログインするアカウントのテストユーザー登録を依頼してください。':failure.type==='popup_failed_to_open'?'Googleのログイン画面を開けません。ブラウザーでポップアップを許可して再度お試しください。':'Googleログインを完了できませんでした。画面を開き直して、もう一度お試しください。')
       });

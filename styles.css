@@ -1,3 +1,4 @@
+html:not([data-toki-top-level]){display:none!important}
 :root{font-family:"Yu Gothic UI","Meiryo",system-ui,sans-serif;color:#243d37;background:#f5f7f8;font-size:14px;--green:#1c574b;--line:#dce5e2;--name-width:170px;--slot-width:34px}
 .connection-notice{padding:10px 14px;border:1px solid #e5d49b;border-radius:7px;background:#fff8df;color:#735719;font-size:13px;line-height:1.7;flex-shrink:0}
 .read-only .event{cursor:pointer}.read-only .resize-handle{display:none}.read-only .row-drag-handle{cursor:default}

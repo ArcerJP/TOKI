@@ -3,9 +3,9 @@
   const local=location.protocol==='file:'||['localhost','127.0.0.1','[::1]'].includes(location.hostname);
   const enabled=!local||new URLSearchParams(location.search).get('mode')==='shared',config=window.TOKI_CONFIG;
   const hooks={},PREFIX='toki-company-v1:',PROFILE=PREFIX+'profile';
-  let client,user=null,company=null,companies=[],online=false,fetchedAt=null,epoch=0,refreshing=false,initialized=false;
+  let client,user=null,company=null,companies=[],online=false,fetchedAt=null,epoch=0,refreshing=false,initialized=false,retryAt=0;
   const emit=(event,value)=>hooks[event]?.(value),error=(message,code)=>Object.assign(Error(message),{code});
-  const messages={AUTH:'Googleでログインしてください。',DENIED:'この会社のアクセス権限がありません。管理者に確認してください。',COMPANY:'会社コードを確認してください。',CONFLICT:'他の人が予定を変更しました。最新の予定からもう一度編集してください。',INVALID:'入力内容を確認してください。',LAST_ADMIN:'最後の管理者は解除できません。先に別の管理者を設定してください。',LIMIT:'登録数の上限に達しました。管理者に確認してください。',NETWORK:'接続できません。保存済みの予定は閲覧のみ利用できます。',CONFIG:'会社の認証設定が完了していません。管理者に確認してください。',STALE:'画面が切り替わったため処理を中止しました。'};
+  const messages={RATE_LIMIT:'操作が集中しています。1分ほど待ってから再度お試しください。',AUTH:'Googleでログインしてください。',DENIED:'この会社のアクセス権限がありません。管理者に確認してください。',COMPANY:'会社コードを確認してください。',CONFLICT:'他の人が予定を変更しました。最新の予定からもう一度編集してください。',INVALID:'入力内容を確認してください。',LAST_ADMIN:'最後の管理者は解除できません。先に別の管理者を設定してください。',LIMIT:'登録数の上限に達しました。管理者に確認してください。',NETWORK:'接続できません。保存済みの予定は閲覧のみ利用できます。',CONFIG:'会社の認証設定が完了していません。管理者に確認してください。',STALE:'画面が切り替わったため処理を中止しました。'};
   const read=(key,fallback=null)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
   const write=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{emit('warning','端末に保存できません。オフライン閲覧や表示設定の保存が利用できない場合があります。');}};
   const remove=key=>{try{localStorage.removeItem(key);}catch{}};
@@ -30,12 +30,14 @@
   function networkFailure(failure,status){return !status||status===0||status>=500||/fetch|network|通信/i.test(failure?.message||'');}
   async function rpc(action,extra={}){
     if(!user)throw error(messages.AUTH,'AUTH');
+    if(Date.now()<retryAt)throw error(messages.RATE_LIMIT,'RATE_LIMIT');
     if(navigator.onLine===false)throw error(messages.NETWORK,'NETWORK');
     const generation=epoch,identity=user.id;
     let result;try{result=await client.rpc('toki_company',{p_action:action,...extra});}catch{if(epoch!==generation||user?.id!==identity)throw error(messages.STALE,'STALE');throw error(messages.NETWORK,'NETWORK');}
     if(epoch!==generation||user?.id!==identity)throw error(messages.STALE,'STALE');
     if(result.error){
-      const code=Object.hasOwn(messages,result.error.message)?result.error.message:result.status===401?'AUTH':result.error.code==='PGRST202'?'CONFIG':networkFailure(result.error,result.status)?'NETWORK':'INVALID';
+      const code=Object.hasOwn(messages,result.error.message)?result.error.message:result.status===401?'AUTH':result.status===403?'DENIED':result.status===429?'RATE_LIMIT':result.error.code==='PGRST202'?'CONFIG':networkFailure(result.error,result.status)?'NETWORK':'INVALID';
+      if(code==='RATE_LIMIT')retryAt=Date.now()+60000;
       throw error(messages[code],code);
     }
     return result.data;
@@ -133,7 +135,6 @@
     if(client){const {error:failure}=await client.auth.signOut({scope:'local'});if(failure)emit('warning','ログアウトの通信に失敗しました。再接続後にもう一度ログアウトしてください。');}
   }
   async function join(code){await rpc('join',{p_code:code});remove(PREFIX+'join-code');return listCompanies();}
-  async function createCompany(name){const result=await rpc('create',{p_name:name});await listCompanies();await selectCompany(result.id);}
   async function manage(action,extra={}){if(!company)throw error(messages.COMPANY,'COMPANY');const value=await rpc(action,{p_company:company.id,...extra});if(action!=='members')await listCompanies();return value;}
   async function save(payload,version){
     if(!online||!company)throw error(messages.NETWORK,'NETWORK');
@@ -142,7 +143,7 @@
   }
   function leaveView(){reset();company=null;state();}
   const shareUrl=()=>config.siteUrl+(company?'#company='+encodeURIComponent(company.code):'');
-  window.TokiShared={enabled,companyAccess:true,initialize,save,refresh,fetchBoard,shareUrl,login,logout,join,createCompany,selectCompany,listCompanies,manage,leaveView,
+  window.TokiShared={enabled,companyAccess:true,initialize,save,refresh,fetchBoard,shareUrl,login,logout,join,selectCompany,listCompanies,manage,leaveView,
     get online(){return online;},get scope(){return scope();},get user(){return profile();},get company(){return company;},get companies(){return companies;},
     get pendingCode(){return new URLSearchParams(location.hash.slice(1)).get('company')||read(PREFIX+'join-code','');}};
 })();
