@@ -10,4 +10,5 @@
 
 | ADR | 状態 | 内容 |
 | --- | --- | --- |
-| [0001](ADR-0001-workspace-adoption.md) | Accepted | 既存TOKIにワークスペース情報構造を追加 |
+| [0001](ADR-0001-workspace-adoption.md) | Superseded（ソース配置部分） | 既存TOKIにワークスペース情報構造を追加 |
+| [0002](ADR-0002-source-layout.md) | Accepted | src/publicへ整理し、公開URL・動作を維持 |

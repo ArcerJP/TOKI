@@ -4,11 +4,16 @@
 
 ## 開発ワークスペース
 
-既存アプリの配置を維持し、設計・資料・作業記録を分けています。人向けの全体図は [フォルダ構成](docs/architecture/directory-map.md)、設計意図は [5つのパターン](docs/architecture/five-patterns.md)、AI向け入口は [AGENTS.md](AGENTS.md) です。
+アプリ本体を `src`、HTML・公開素材を `public` に整理し、公開URLは維持しています。人向けの全体図は [フォルダ構成](docs/architecture/directory-map.md)、ソースと配信の対応は [ソース配置](docs/architecture/source-layout.md)、設計意図は [5つのパターン](docs/architecture/five-patterns.md)、AI向け入口は [AGENTS.md](AGENTS.md) です。
 
 作業は [WORKFLOW](work/WORKFLOW.md) に従い、必要なSkillを `.agents/skills` から選びます。資料原本・動的な作業記録・私的な設定はGit除外。これらの開発用ファイルはWeb配信・PWAキャッシュの対象に含めません。詳細は [正本の定義](docs/architecture/source-of-truth.md) を参照してください。
 
 ```text
+src/            JavaScript・CSS（機能別）
+public/         HTML・公開設定・PWA・アイコン・固定依存
+local/          端末専用データ（README以外はGit除外）
+scripts/        ビルド・公開処理
+tests/          自動検証
 .agents/skills/  作業手順
 docs/           正式仕様・設計・ADR
 knowledge/      raw原本 → wiki派生知識
@@ -85,9 +90,11 @@ PDFではグループをすべて展開し、個人・グループ双方の予�
 
 ## 端末内で使う
 
-`index.html`を直接開くか、`node serve.cjs`で http://127.0.0.1:4173 を開きます。端末内モードは共有版とは別のデータです。共有版をlocalhostで確認する場合は`?mode=shared`を付け、認証リダイレクト先も開発環境用に設定します。
+`node serve.cjs`（または `npm start`）で http://127.0.0.1:4173 を開きます。ソースから直接配信するため、通常の開発ではビルド不要です。端末内モードは共有版とは別のデータです。共有版をlocalhostで確認する場合は`?mode=shared`を付け、認証リダイレクト先も開発環境用に設定します。
 
-公開用`data.js`は「メンバー1〜16」と空の予定です。実際の初期予定はGit管理対象外の`data.local.js`に分離し、端末内モードでだけ読み込みます。端末内モードの編集はブラウザーの保存データを消すと失われます。共有データは消えません。
+公開用 `src/app/data.js` は「メンバー1〜16」と空の予定です。実際の初期予定はGit管理対象外の `local/data.local.js` に分離し、localhostの従来URL `/data.local.js` から端末内モードでだけ読み込みます。旧ルート配置の `data.local.js` もlocal側のファイルがない場合は利用できます。端末内モードの編集はブラウザーの保存データを消すと失われます。共有データは消えません。
+
+HTMLを直接開く場合は `node scripts/prepare-site.cjs` の後に `site/index.html` を開きます。`public/index.html` は配信素材のため単独では使いません。生成されるsiteには私的な初期予定を含めないため、その予定を使う場合は上記のローカルサーバーを使用してください。
 
 ## Googleカレンダーから可能時間を取り込む
 
@@ -95,7 +102,7 @@ PDFではグループをすべて展開し、個人・グループ双方の予�
 
 取り込み先の人・開始・終了を指定し、プレビューを確認してから、その人の指定期間を置き換えます。期間外の可能時間・他の人・MTGは保持します。MTGと重なる時間は除外し、グループの共通時間も再計算します。「元に戻す」にも対応しています。
 
-利用開始には`config.js`の`googleClientId`設定が必要です。クライアントID未設定時は画面に準備中と表示し、ログインを開始しません。[Google側の設定手順と取り込み仕様](docs/google-calendar-setup.md)を参照してください。
+利用開始には`public/config.js`の`googleClientId`設定が必要です。クライアントID未設定時は画面に準備中と表示し、ログインを開始しません。[Google側の設定手順と取り込み仕様](docs/google-calendar-setup.md)を参照してください。
 
 ## PWA・オフライン
 
@@ -108,7 +115,7 @@ PDFではグループをすべて展開し、個人・グループ双方の予�
 - Service Workerは公開ファイルの許可リストだけをキャッシュし、Supabaseへの通信・`data.local.js`・秘密ファイルをキャッシュしません。予定のスナップショットはユーザーIDと会社IDを照合したうえで読み込みます。
 - 画面更新時は「最新版に更新」が表示されます。編集を保存・終了してから押してください。他のタブの編集を勝手に再読み込みすることはありません。
 
-`node scripts/prepare-site.cjs`で公開用の`site/`を生成します（既存の`site/`は再生成）。全公開ファイルの内容からキャッシュの版番号を自動生成するため、変更時に版番号を手作業で更新する必要はありません。GitHub Actionsも同じ処理を使います。`sw.js`はテンプレートなので、公開時は生成済みの`site/sw.js`を使います。ローカルでは`node serve.cjs`が生成済みService Workerを配信します。`file://`で直接開く場合はPWA機能を利用できません。
+`node scripts/prepare-site.cjs`で公開用の`site/`を生成します（既存の`site/`は再生成）。`scripts/pwa-assets.cjs` の対応表に従ってsrc/publicからコピーし、以前と同じ公開URLへ配置します。全公開ファイルの内容からキャッシュの版番号を自動生成するため、変更時に版番号を手作業で更新する必要はありません。GitHub Actionsも同じ処理を使います。`public/sw.js`はテンプレートなので、公開時は生成済みの`site/sw.js`を使います。ローカルでは`node serve.cjs`が同じService Workerを配信します。`file://`で直接開く場合はPWA機能を利用できません。
 
 実装の参照：[MDN・インストール可能なPWA](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable)、[MDN・Service Worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)。
 
@@ -124,6 +131,6 @@ npm test
 
 テーブルへの直接アクセスは無効です。`toki_company` RPCがGoogle認証・有効なセッション・会社所属・承認状態・管理者権限・版番号を毎回検証します。会社コードや公開APIキーだけでは予定を取得できません。Secret keyやservice_roleをブラウザーで使用しません。会社管理者の個人情報やGoogleのクライアントシークレットは公開ファイルへ入れません。
 
-`model.js`は人・所属・MTG対象者の参照検証、`availability.js`は時間区間の計算、`schedule.js`はMTG予約・復元とコピー文字列を扱います。保存・取り消しは人・グループ・予定をまとめて処理するため、削除・復元で参照がずれません。
+`src/core` 内の `model.js` は人・所属・MTG対象者の参照検証、`availability.js` は時間区間の計算、`schedule.js` はMTG予約・復元とコピー文字列を扱います。保存・取り消しは人・グループ・予定をまとめて処理するため、削除・復元で参照がずれません。
 
 `main`へのPushでGitHub Actionsが指定された静的ファイルだけをGitHub Pagesに公開します。DBスキーマは自動適用されません。個人データ・共有URL・PDF・画像・秘密鍵・`tmp/`はコミットしないでください。

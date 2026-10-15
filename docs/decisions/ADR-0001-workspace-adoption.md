@@ -1,9 +1,9 @@
 # ADR-0001: Adopt the workspace structure around existing TOKI
 
-- Status: Accepted
+- Status: Superseded（ソース配置の判断のみ。5パターンの情報構造は継続）
 - Date: 2026-10-15
 - Decision authority: ユーザーによる、提供したフォルダ設計指示をTOKIにも適用する明示依頼
-- Supersedes / Superseded by: なし
+- Superseded by: [ADR-0002](ADR-0002-source-layout.md)
 
 ## Context
 

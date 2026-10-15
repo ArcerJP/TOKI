@@ -4,7 +4,8 @@
 
 | 情報 | 正本 | 派生・参照先 |
 | --- | --- | --- |
-| 現在の動作 | アプリソース・必要な実環境の検証 | テスト・検証記録 |
+| 現在の動作 | src/public・必要な実環境の検証 | テスト・検証記録 |
+| 公開URLと配信素材の対応 | scripts/pwa-assets.cjsのsources | site生成物・ローカルサーバー・PWA |
 | 機能の意図・運用 | docsの対象仕様 | READMEの短い案内 |
 | 設計判断と理由 | docs/decisionsのADR | architectureやMEMORYのリンク |
 | ワークスペース構成 | docs/architecture | ルートAGENTSの経路案内 |

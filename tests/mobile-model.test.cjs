@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const H=require('../mobile-model.js'),S=require('../schedule.js'),M=require('../model.js');
+const H=require('../src/core/mobile-model.js'),S=require('../src/core/schedule.js'),M=require('../src/core/model.js');
 const date='2026-10-05';
 const seed=()=>({schemaVersion:4,people:['A','B','C','D'],groups:[{id:'a',name:'局A',members:[0,1]},{id:'b',name:'局B',members:[1,2]}],events:[0,1,2].map(person=>({id:'e'+person,person,date,start:540,end:1080})),meetings:[]});
 test('hiding a group only removes its display rows, preserves multiple memberships and unassigned people',()=>{

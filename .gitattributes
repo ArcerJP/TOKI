@@ -1,2 +1,2 @@
 * text=auto eol=lf
-vendor/supabase.js -diff -text linguist-vendored=true
+public/vendor/supabase.js -diff -text linguist-vendored=true

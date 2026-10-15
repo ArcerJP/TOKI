@@ -1,6 +1,7 @@
+const {sourcePath}=require('../scripts/pwa-assets.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const S=require('../schedule.js'),A=require('../availability.js');
-const source=fs.readFileSync('meeting-menu.js','utf8');
+const S=require('../src/core/schedule.js'),A=require('../src/core/availability.js');
+const source=fs.readFileSync(sourcePath('meeting-menu.js'),'utf8');
 function environment({personal=false,availability=false,online=true,copyFails=false}={}){
   const listeners=new Map();
   function element(){return {hidden:false,disabled:false,textContent:'',value:'',style:{},attrs:{},open:false,

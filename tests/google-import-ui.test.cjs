@@ -1,18 +1,19 @@
+const {sourcePath}=require('../scripts/pwa-assets.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const {JSDOM,VirtualConsole}=require('jsdom');
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 async function environment(t){
   const errors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',e=>errors.push(e));
-  const dom=new JSDOM(fs.readFileSync('index.html','utf8'),{url:'https://example.test/TOKI/',runScripts:'outside-only',virtualConsole});
+  const dom=new JSDOM(fs.readFileSync(sourcePath('index.html'),'utf8'),{url:'https://example.test/TOKI/',runScripts:'outside-only',virtualConsole});
   const w=dom.window,d=w.document,$=id=>d.getElementById(id);
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
-  for(const file of ['model.js','availability.js','calendar-import.js'])w.eval(fs.readFileSync(file,'utf8'));
+  for(const file of ['model.js','availability.js','calendar-import.js'])w.eval(fs.readFileSync(sourcePath(file),'utf8'));
   let connected=false,fingerprint='original',listHandler,busyHandler,loginFailure=false;
   const items=[{id:'mine',name:'個人',primary:true},{id:'shared',name:'共有カレンダー'},{id:'text',name:'<img src=x onerror=alert(1)>'}],fetches=[],saves=[];
   const board={schemaVersion:4,people:['A','B'],groups:[],events:[],meetings:[]};
   w.TokiGoogleCalendar={configured:true,get connected(){return connected;},load:async()=>{},login:async()=>{connected=false;if(loginFailure)throw Error('権限不足');connected=true;},logout:()=>{connected=false;},listCalendars:async signal=>listHandler?listHandler(signal):items,fetchBusy:async(range,ids,signal)=>{fetches.push({range,ids:[...ids],signal});if(busyHandler)return busyHandler(range,ids,signal);return ids.includes('shared')?[{start:Date.parse('2026-10-05T11:10:00+09:00'),end:Date.parse('2026-10-05T11:50:00+09:00')}]:[];}};
-  w.eval(fs.readFileSync('google-import-ui.js','utf8'));
+  w.eval(fs.readFileSync(sourcePath('google-import-ui.js'),'utf8'));
   w.TokiGoogleImportUI({context:()=>({board,fingerprint,pending:false}),selected:()=> '2026-10-05',canOpen:()=>true,apply:async(plan,version)=>{saves.push({plan,version});return true;}});
   t.after(()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[]);});
   async function click(id){$(id).click();await flush();}

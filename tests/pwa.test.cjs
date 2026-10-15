@@ -1,13 +1,13 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const {assets,worker}=require('../scripts/pwa-assets.cjs');
+const {assets,sourcePath,worker}=require('../scripts/pwa-assets.cjs');
 const scope='https://example.test/TOKI/';
 test('pending updates are actionable from the signed-out gate without interrupting edits',async t=>{
-  const {JSDOM}=require('jsdom'),dom=new JSDOM(fs.readFileSync('index.html','utf8'),{url:scope,runScripts:'outside-only'}),w=dom.window;
+  const {JSDOM}=require('jsdom'),dom=new JSDOM(fs.readFileSync(sourcePath('index.html'),'utf8'),{url:scope,runScripts:'outside-only'}),w=dom.window;
   t.after(()=>w.close());const sent=[],registration={waiting:{postMessage:value=>sent.push(value.type)},addEventListener(){}};
   Object.defineProperty(w,'isSecureContext',{value:true});
   Object.defineProperty(w.navigator,'serviceWorker',{value:{controller:{},addEventListener(){},register:async()=>registration}});
   w.document.getElementById('schedule-app').hidden=true;w.document.getElementById('auth-gate').hidden=false;
-  w.eval(fs.readFileSync('pwa.js','utf8'));w.dispatchEvent(new w.Event('load'));await new Promise(resolve=>setTimeout(resolve,10));
+  w.eval(fs.readFileSync(sourcePath('pwa.js'),'utf8'));w.dispatchEvent(new w.Event('load'));await new Promise(resolve=>setTimeout(resolve,10));
   const button=w.document.getElementById('auth-update-app');assert.equal(button.hidden,false);
   w.document.getElementById('schedule-app').setAttribute('aria-busy','true');button.click();
   assert.equal(sent.length,0);assert.equal(w.document.getElementById('auth-pwa-status').hidden,false);
@@ -29,10 +29,10 @@ function environment(){
   return {stores,deleted,requests,lifecycle,fetch,get fetches(){return fetches;},get claimed(){return claimed;},get skipped(){return skipped;}};
 }
 test('manifest has scoped start URL and correctly sized PNG icons',()=>{
-  const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest'));
+  const manifest=JSON.parse(fs.readFileSync(sourcePath('manifest.webmanifest')));
   assert.equal(manifest.start_url,'./');assert.equal(manifest.scope,'./');assert.equal(manifest.display,'standalone');
   assert.equal(manifest.id,'./');assert.ok(!JSON.stringify(manifest).includes('#share'));
-  for(const icon of manifest.icons){const png=fs.readFileSync(icon.src);const [w,h]=icon.sizes.split('x').map(Number);assert.equal(png.readUInt32BE(16),w);assert.equal(png.readUInt32BE(20),h);}
+  for(const icon of manifest.icons){const png=fs.readFileSync(sourcePath(icon.src));const [w,h]=icon.sizes.split('x').map(Number);assert.equal(png.readUInt32BE(16),w);assert.equal(png.readUInt32BE(20),h);}
   assert.ok(manifest.icons.some(i=>i.sizes==='192x192'));assert.ok(manifest.icons.some(i=>i.sizes==='512x512'));
 });
 test('worker caches a complete version and serves a scoped offline navigation',async()=>{

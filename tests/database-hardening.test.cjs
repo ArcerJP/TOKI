@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
-const {PGlite}=require('@electric-sql/pglite'),M=require('../model.js');
+const {PGlite}=require('@electric-sql/pglite'),M=require('../src/core/model.js');
 const uid=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
 test('Unicode validation and application abuse cannot lock out a company',async t=>{
   const db=new PGlite();t.after(()=>db.close());

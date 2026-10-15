@@ -39,7 +39,7 @@ const file='database/schema.sql',source=fs.readFileSync(file,'utf8');
 const outlined=Array.from({length:36},(_,i)=>String.fromCodePoint(0x1ccd6+i)).join('');
 const compatibility=`normalize(translate(value,${quote(outlined)},${quote(outlined.normalize('NFKC'))}),NFKC)`;
 fs.writeFileSync(file,source.replace(/-- BEGIN GENERATED NAME CASE MAP[\s\S]*?-- END GENERATED NAME CASE MAP/,()=>sql).replace(/normalize\((?:translate\(value,'[^']*','[^']*'\)|value),NFKC\)/,()=>compatibility));
-const modelFile='model.js',model=fs.readFileSync(modelFile,'utf8');
+const modelFile='src/core/model.js',model=fs.readFileSync(modelFile,'utf8');
 const jsRange=characterClass(n=>'\\u{'+n.toString(16)+'}');
 const js=`// BEGIN GENERATED NAME RULES (Unicode ${process.versions.unicode})
   const caseFrom=[...${JSON.stringify(from.join(''))}],caseTo=[...${JSON.stringify(to.join(''))}];

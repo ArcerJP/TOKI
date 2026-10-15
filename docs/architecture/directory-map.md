@@ -1,6 +1,6 @@
 # Directory map
 
-既存TOKIのアプリ配置を保ち、開発用の情報だけを追加する。分類と正本の判断は [source-of-truth](source-of-truth.md)、構造を変える場合は [extension-policy](extension-policy.md)。
+アプリをsrc/public、開発用の情報をdocs/knowledge/workへ分ける。公開URLとの対応は [source-layout](source-layout.md)、分類と正本の判断は [source-of-truth](source-of-truth.md)、構造を変える場合は [extension-policy](extension-policy.md)。
 
 ```text
 TOKI/
@@ -11,10 +11,18 @@ TOKI/
 ├── knowledge/            raw原本 → wiki派生知識
 ├── work/                 inbox → notebook → outbox → archive
 ├── memory/               短期メモ
-├── *.html / *.css / *.js  既存アプリのソース
+├── src/                  アプリのJavaScript・CSS
+│   ├── core/             共通モデル・時間計算
+│   ├── app/              起動・状態連携・PWA操作
+│   ├── auth/             会社・認証・共有
+│   ├── calendar/         Google取込
+│   ├── meetings/         MTGメニュー・書き出し
+│   └── ui/               PC・スマートフォンUI
+├── public/               HTML・公開設定・PWA素材・icons・vendor
+├── local/                私的な端末内データ（READMEのみGit管理）
 ├── database/             DB定義・移行
 ├── scripts/ / tests/     ビルド・検証
-├── icons/ / vendor/      配信素材・固定依存コード
+├── serve.cjs             従来のローカル起動用入口
 └── .github/              既存公開CI・PRテンプレート
 ```
 
@@ -43,15 +51,17 @@ TOKI/
 | work/notebook/ | 作業中 | 調査・計画・実施結果 | 開始・再開 | task単位 | READMEのみ | outboxへ移動 |
 | work/outbox/ | 確認待ち | 実施済み結果・残件 | 人のレビュー | 修正はnotebookへ戻す | READMEのみ | 確認後archiveへ |
 | work/archive/ | 確認済み | 過去taskの記録 | 必要な参照時 | 履歴を尊重 | READMEのみ | 自動削除しない |
-| ルートのHTML / CSS / JS、serve.cjs | アプリ実装 | 現在の実装動作 | 対象変更・不具合時 | 依頼範囲 | 管理 | 既存配置を維持 |
+| src/ | 機能別のJavaScript・CSS | 現在のアプリ実装 | 対象変更・不具合時 | 依頼範囲 | 管理 | 公開URLと読込順を維持 |
+| public/ | HTML・公開設定・PWA素材 | 配信に使う素材 | 対象変更時 | 公開可能な内容のみ | 管理 | 許可リスト経由で配信 |
+| serve.cjs | ローカル起動入口 | ローカル配信 | 配信変更時 | 検証とともに | 管理 | 公開対応表と同期 |
 | database/ | DB定義・移行 | スキーマの意図・SQL | 認可・保存変更 | 承認・検証が必要 | 管理 | 本番適用と区別 |
-| scripts/ | ビルド・配信 | ビルド手順・許可リスト | ビルド変更時 | 検証とともに | 管理 | 配信範囲を維持 |
+| scripts/ | ビルド・配信 | ビルド手順・公開パス→ソース対応表 | ビルド変更時 | 検証とともに | 管理 | 配信範囲・URLを維持 |
 | tests/ | 自動検証 | 検証された振る舞い | 関連変更時 | 意味のあるテスト | 管理 | 実装と整合 |
-| icons/ / vendor/ | 素材・依存成果物 | 配信する固定素材 | 変更時 | 生成手順・ライセンス確認 | 管理 | 生成元と同期 |
+| public/icons/ / public/vendor/ | 素材・依存成果物 | 配信する固定素材 | 変更時 | 生成手順・ライセンス確認 | 管理 | 生成元と同期 |
 | .github/ | 公開CI・PR雛形 | CI設定・レビュー項目 | 公開・PR時 | 範囲確認後 | 管理 | 既存CIを維持 |
 | package*.json | 依存・実行定義 | 固定依存・scripts | 環境確認・依存変更 | 必要時のみ | 管理 | lockと同期 |
 | .editorconfig / .gitattributes / .gitignore | 形式・Git境界 | 編集形式・除外規則 | 構造変更・差分確認 | 意図を検証 | 管理 | 個別例外を保持 |
 | node_modules/ / site/ / tmp/ / output/ | 依存・生成・検証用 | 再生成可能な成果物 | 必要時 | 対象パス確認後 | 除外 | 再生成・安全に整理 |
-| .env* / data.local.js | 秘密・ローカル予定 | ローカル設定・データ | 必要かつ承認範囲 | 所有者の意図内 | 除外（例ファイル除く） | 自動転載しない |
+| local/ / .env* / 旧data.local.js | 秘密・ローカル予定 | ローカル設定・データ | 必要かつ承認範囲 | 所有者の意図内 | 除外（README・例ファイル除く） | 自動転載しない |
 
 一覧は主な既存ファイル群をまとめたもの。新規ディレクトリは責務・正本・公開範囲が定まってから追加する。

@@ -4,6 +4,8 @@
 
 対象コード：`e56c63a`
 
+2026年10月15日：ソースの配置を整理。本文のファイル名は当時の名前・公開URLを表す。現在の編集場所は [ソース配置](architecture/source-layout.md) を参照。
+
 対象：iPhoneなどの小さい縦長画面、Safari、ホーム画面に追加したPWA
 状態：全設計の承認後、実装へ移行。実装時の調整・検証結果は14章に記載。
 
@@ -66,7 +68,7 @@
 
 ![現行画面を狭幅で確認した結果](assets/mobile-current-390.png)
 
-根拠となる実装：[styles.css](../styles.css)、[app.js](../app.js)、[meeting-menu.js](../meeting-menu.js)、[index.html](../index.html)。
+根拠となる実装：[styles.css](../src/ui/styles.css)、[app.js](../src/app/app.js)、[meeting-menu.js](../src/meetings/meeting-menu.js)、[index.html](../public/index.html)。
 
 ## 3. 参考にする著名アプリと採用する考え方
 

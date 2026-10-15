@@ -1,4 +1,4 @@
-const test=require('node:test'),assert=require('node:assert/strict'),S=require('../schedule.js'),M=require('../model.js');
+const test=require('node:test'),assert=require('node:assert/strict'),S=require('../src/core/schedule.js'),M=require('../src/core/model.js');
 const date='2026-10-15',r=(start,end)=>({start,end});let serial=0;const id=()=>`new-${++serial}`;
 const base=()=>({schemaVersion:4,people:['A','B','C'],groups:[{id:'g',name:'企画局',members:[0,1,2]},{id:'h',name:'別グループ',members:[0,1]}],events:[{id:'a',person:0,date,...r(540,1080)},{id:'b',person:1,date,...r(600,1020)},{id:'c',person:2,date,...r(720,960)}],meetings:[]});
 test('groups show the exact intersection and local exclusions do not alter stored memberships',()=>{

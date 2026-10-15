@@ -1,4 +1,4 @@
-const test=require('node:test'),assert=require('node:assert/strict'),M=require('../model.js');
+const test=require('node:test'),assert=require('node:assert/strict'),M=require('../src/core/model.js');
 test('week picker lists Sunday through Saturday including dates outside the original six days',()=>{
   assert.deepEqual(M.weekDates('2026-10-05'),['2026-10-04','2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-10']);
   assert.deepEqual(M.weekDates('2026-10-03'),['2026-09-27','2026-09-28','2026-09-29','2026-09-30','2026-10-01','2026-10-02','2026-10-03']);

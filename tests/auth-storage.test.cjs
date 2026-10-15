@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createClient}=require('@supabase/supabase-js');
-const authStorage=require('../auth-storage.js');
+const authStorage=require('../src/auth/auth-storage.js');
 const key='sb-audit-auth-token',config={url:'https://audit.invalid',publishableKey:'audit-public-key'};
 const session=expired=>JSON.stringify({access_token:'audit-only-access-token',refresh_token:'audit-only-refresh-token',token_type:'bearer',expires_at:Math.floor(Date.now()/1000)+(expired?-3600:3600),user:{id:'00000000-0000-4000-8000-000000000001',email:'audit@example.test',aud:'authenticated',app_metadata:{},user_metadata:{},created_at:'2026-01-01T00:00:00Z'}});
 function storage(){const values=new Map();return {values,get length(){return values.size;},key:i=>[...values.keys()][i],getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};}

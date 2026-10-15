@@ -1,3 +1,4 @@
+const {sourcePath}=require('../scripts/pwa-assets.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const payload=()=>({schemaVersion:4,people:['Member'],groups:[],events:[],meetings:[]});
 const choices=()=>['a','b'].map(id=>({id,name:'Company '+id,code:id.repeat(32),role:'member',status:'active'}));
@@ -14,11 +15,11 @@ function environment({storage=new Map(),identity='u1',offline=false,search='',ha
   }};
   const localStorage={get length(){return storage.size;},key:i=>[...storage.keys()][i],getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
   const window={TOKI_CONFIG:{url:'https://example.supabase.co',publishableKey:'public-test',boardId:'october-2026',siteUrl:'https://example.test/'},TokiSupabase:{createClient:()=>client},addEventListener:(type,fn)=>listeners[type]=fn};
-  vm.runInNewContext(fs.readFileSync('model.js','utf8'),{window});
-  window.TokiAuthStorage=require('../auth-storage.js');
+  vm.runInNewContext(fs.readFileSync(sourcePath('model.js'),'utf8'),{window});
+  window.TokiAuthStorage=require('../src/auth/auth-storage.js');
   const document={hidden:false,createElement:()=>({}),head:{append:s=>queueMicrotask(()=>s.onload())},addEventListener(){}};
   const replacedUrls=[];
-  vm.runInNewContext(fs.readFileSync('shared.js','utf8'),{window,document,navigator,localStorage,location:{protocol:'https:',hostname:'example.test',search,hash,pathname:'/'},history:{replaceState:(state,title,url)=>replacedUrls.push(url)},URL,URLSearchParams,setInterval:()=>0,setTimeout});
+  vm.runInNewContext(fs.readFileSync(sourcePath('shared.js'),'utf8'),{window,document,navigator,localStorage,location:{protocol:'https:',hostname:'example.test',search,hash,pathname:'/'},history:{replaceState:(state,title,url)=>replacedUrls.push(url)},URL,URLSearchParams,setInterval:()=>0,setTimeout});
   return {api:window.TokiShared,calls,boards,resets,errors,states,accounts,storage,store,navigator,listeners,replacedUrls,init:()=>window.TokiShared.initialize({board:b=>boards.push(b),reset:()=>resets.push(1),error:e=>errors.push(e),state:s=>states.push(s),account:a=>accounts.push(a)}),fail:x=>failure=x,handle:fn=>handler=fn,async changeUser(id){identity=id;callback('SIGNED_IN',session());await new Promise(r=>setTimeout(r,10));}};
 }
 

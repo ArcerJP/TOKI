@@ -1,5 +1,6 @@
+const {sourcePath}=require('../scripts/pwa-assets.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const window={};for(const file of ['model.js','availability.js','calendar-import.js'])vm.runInNewContext(fs.readFileSync(file,'utf8'),{window});
+const window={};for(const file of ['model.js','availability.js','calendar-import.js'])vm.runInNewContext(fs.readFileSync(sourcePath(file),'utf8'),{window});
 const C=window.TokiCalendarImport;
 const period=(start='2026-10-03T08:00',end='2026-10-04T00:00')=>C.period(start,end);
 const busy=(start,end)=>({start:Date.parse(start),end:Date.parse(end)});

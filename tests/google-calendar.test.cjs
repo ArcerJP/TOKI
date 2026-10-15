@@ -1,10 +1,11 @@
+const {sourcePath}=require('../scripts/pwa-assets.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const source=fs.readFileSync('google-calendar.js','utf8'),scopes=['https://www.googleapis.com/auth/calendar.calendarlist.readonly','https://www.googleapis.com/auth/calendar.events.freebusy'];
+const source=fs.readFileSync(sourcePath('google-calendar.js'),'utf8'),scopes=['https://www.googleapis.com/auth/calendar.calendarlist.readonly','https://www.googleapis.com/auth/calendar.events.freebusy'];
 const range={start:'2026-10-03T08:00:00+09:00',end:'2026-10-04T00:00:00+09:00',timeMin:Date.parse('2026-10-03T08:00:00+09:00'),timeMax:Date.parse('2026-10-04T00:00:00+09:00')};
 function environment(){
   let config,status=200,handler,access={access_token:'private-token',expires_in:3600},now=1000,granted=true,popupError=null,scopeChecks=[];const calls=[];
   const window={TOKI_CONFIG:{googleClientId:'123456-example.apps.googleusercontent.com'},google:{accounts:{oauth2:{initTokenClient:value=>{config=value;return {requestAccessToken(){queueMicrotask(()=>popupError?value.error_callback({type:popupError}):value.callback(access));}};},hasGrantedAllScopes:(response,...requested)=>{scopeChecks=requested;return granted;}}}}};
-  vm.runInNewContext(fs.readFileSync('calendar-import.js','utf8'),{window});
+  vm.runInNewContext(fs.readFileSync(sourcePath('calendar-import.js'),'utf8'),{window});
   vm.runInNewContext(source,{window,location:{protocol:'https:'},Date:class extends Date{static now(){return now;}},URLSearchParams,AbortController,setTimeout,clearTimeout,fetch:async(url,options)=>{
     calls.push({url,options});if(options.signal.aborted)throw Object.assign(Error(),{name:'AbortError'});
     const body=options.body?JSON.parse(options.body):null;

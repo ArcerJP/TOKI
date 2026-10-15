@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const S=require('../schedule.js'),M=require('../model.js');
+const S=require('../src/core/schedule.js'),M=require('../src/core/model.js');
 function fixture(){return {schemaVersion:4,people:['ふうか','れいな','ゆうと'],groups:[{id:'plan',name:'企画局',members:[0,1,2]},{id:'sound',name:'音響局',members:[2]},{id:'empty',name:'予定なし局',members:[0]}],events:[],meetings:[
   {id:'later',group:'plan',date:'2026-10-06',start:660,end:720,members:[0,2]},
   {id:'sound',group:'sound',date:'2026-10-05',start:600,end:660,members:[2]},

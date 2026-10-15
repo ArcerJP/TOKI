@@ -1,4 +1,4 @@
-const test=require('node:test'),assert=require('node:assert/strict'),A=require('../availability.js');
+const test=require('node:test'),assert=require('node:assert/strict'),A=require('../src/core/availability.js');
 const r=(start,end)=>({start,end});
 test('common availability accounts for overlapping registrations and precise minute boundaries',()=>{
   const people=[[r(540,620),r(600,780),r(900,1440)],[r(570,750),r(930,1380)],[r(610,720),r(750,960),r(1020,1400)]];

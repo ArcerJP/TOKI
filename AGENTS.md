@@ -26,11 +26,11 @@
 
 ## TOKI invariants
 
-- 既存のルート直下のHTML/CSS/JavaScript、database、scripts、testsを実装の正本とする。
+- srcのJavaScript/CSS、publicのHTML・公開素材、database、scripts、testsを実装の正本とする。配置は [source-layout](docs/architecture/source-layout.md)。
 - HTMLとCSSの分離、PCの基本操作、現在の公開URLを維持。変更が必要なら依頼の範囲を確認する。
 - 会社間のアクセス制御はサーバー側で保証する。グループの表示切替を認可に使わない。
 - Google取込は許可されたカレンダーの予定あり／なしを扱い、不要な予定の詳細を取得しない。
-- 配信対象は `scripts/pwa-assets.cjs` の許可リスト。docs・knowledge・work・Skillを配信に混ぜない。
+- 配信対象と公開URLは `scripts/pwa-assets.cjs` のsources対応表。物理ソースを移す場合も公開URL・読込順を保つ。publicを丸ごとコピーせず、local・docs・knowledge・work・Skillを配信に混ぜない。
 - オフライン保存・認証・会社権限・MTGの復元処理への変更は、関連仕様と回帰テストを確認する。
 
 ## Safe work

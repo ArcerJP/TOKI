@@ -1,5 +1,7 @@
 # Private availability data; migrate to an access-controlled database before publishing.
 /data.local.js
+/local/*
+!/local/README.md
 /verify.cjs
 /output/
 /preview.png
