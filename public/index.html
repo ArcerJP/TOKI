@@ -436,25 +436,13 @@
       <div class="company-actions"><button id="company-switch">会社を切り替える</button><button id="company-dialog-logout">ログアウト</button></div>
       <p class="import-help">ログアウトすると、この利用者の端末に保存した予定を消去します。アクセス停止後も、オフライン端末の保存済みデータは即時には消去できません。</p>
       <p id="company-admin-status" role="status"></p>
-      <section id="company-admin" hidden><fieldset id="company-admin-controls"><h3>参加者の管理</h3><div id="company-members"></div><h3>メールアドレスで招待</h3>
+      <p id="company-admin-error" class="error" role="alert" tabindex="-1"></p>
+      <section id="company-admin" hidden><fieldset id="company-admin-controls"><h3>参加者の管理</h3>
+        <p class="import-help">管理者は複数人に設定できます。最後の管理者は、一般メンバーへの変更・アクセス停止ができません。管理を引き継ぐ場合は、先に相手を管理者に変更してください。</p>
+        <div id="company-members"></div><h3>メールアドレスで招待</h3>
         <p class="import-help">登録したGoogleアカウントでログインすると参加できます。有効期間は7日間。メールは自動送信されません。会社URLを別途伝えてください。</p>
         <div class="company-form"><label for="company-invite-email">招待先のGoogleメールアドレス</label><input id="company-invite-email" type="email" autocomplete="off" /><button id="company-invite-button">招待を登録</button></div><div id="company-invites"></div>
-        <section class="company-transfer" aria-labelledby="company-transfer-title">
-          <h3 id="company-transfer-title">管理者権限の譲渡</h3>
-          <p class="import-help">この団体の承認済みメンバーへ管理を引き継ぎます。完了すると、あなたは一般メンバーになります。予定や所属は変わりません。</p>
-          <p id="company-transfer-empty" class="import-help" hidden>譲渡できるメンバーがいません。上の「メールアドレスで招待」から相手を招待し、相手がGoogleログインして参加した後に開き直してください。</p>
-          <div class="company-form">
-            <label for="company-transfer-target">譲渡先のGoogleアカウント</label>
-            <select id="company-transfer-target"><option value="">メンバーを選択</option></select>
-            <button id="company-transfer-review" type="button" disabled>譲渡内容を確認</button>
-          </div>
-          <div id="company-transfer-confirmation" class="company-transfer-confirmation" hidden>
-            <p id="company-transfer-summary"></p>
-            <p class="import-help">完了後、管理者に戻るには新しい管理者などによる権限変更が必要です。</p>
-            <div class="company-actions"><button id="company-transfer-submit" type="button" class="danger">譲渡を確定</button><button id="company-transfer-cancel" type="button">キャンセル</button></div>
-          </div>
-        </section>
-      </fieldset></section><p id="company-admin-error" class="error" role="alert"></p>
+      </fieldset></section>
     </dialog>
     <dialog id="google-import-dialog" aria-labelledby="google-import-title">
       <div class="dialog-heading">

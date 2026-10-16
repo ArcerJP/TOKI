@@ -61,10 +61,20 @@ test('company authorization enforced by PostgreSQL for every read and write',asy
     await auth(2);const c=(await rpc('list'))[0];assert.equal(c.id,initial.id);assert.equal(c.role,'member');assert.equal(c.status,'active');
   });
   await t.test('the last administrator cannot be removed; a separate promotion permits changing admins',async()=>{
+    // A stopped admin in this company and an active admin in another company do not count.
+    await db.exec('reset role');await db.query("update toki_private.company_members set role='admin' where company_id=$1 and user_id=$2",[initial.id,users[1]]);
     await auth(0);await assert.rejects(rpc('block',{p_company:initial.id,p_member:users[0]}),/LAST_ADMIN/);
     await assert.rejects(rpc('role',{p_company:initial.id,p_member:users[0],p_role:'member'}),/LAST_ADMIN/);
-    await rpc('role',{p_company:initial.id,p_member:users[2],p_role:'admin'});await rpc('role',{p_company:initial.id,p_member:users[0],p_role:'member'});
+    assert.equal((await rpc('list')).find(c=>c.id===initial.id).role,'admin');
+    await rpc('role',{p_company:initial.id,p_member:users[2],p_role:'admin'});
+    let members=(await rpc('members',{p_company:initial.id})).members;
+    assert.deepEqual(members.filter(m=>m.status==='active'&&m.role==='admin').map(m=>m.id).sort(),[users[0],users[2]]);
+    await rpc('role',{p_company:initial.id,p_member:users[0],p_role:'member'});
     await assert.rejects(rpc('members',{p_company:initial.id}),/DENIED/);
+    await auth(2);await assert.rejects(rpc('role',{p_company:initial.id,p_member:users[2],p_role:'member'}),/LAST_ADMIN/);
+    await assert.rejects(rpc('block',{p_company:initial.id,p_member:users[2]}),/LAST_ADMIN/);
+    members=(await rpc('members',{p_company:initial.id})).members;
+    assert.deepEqual(members.filter(m=>m.status==='active'&&m.role==='admin').map(m=>m.id),[users[2]]);
   });
   await t.test('a revoked Supabase session cannot reuse its unexpired JWT',async()=>{
     await db.exec('reset role');await db.query('delete from auth.sessions where id=$1',[sessions[2]]);await auth(2);await assert.rejects(rpc('read',{p_company:initial.id}),/AUTH/);

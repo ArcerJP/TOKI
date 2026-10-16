@@ -79,6 +79,14 @@ test('company role changes update the open account and transfer success does not
   assert.equal(e.api.company,null);assert.equal(e.storage.has('toki-company-v1:u1:a'),false);
 });
 
+test('last-admin server errors keep the current role and expose the Japanese recovery message',async()=>{
+  const e=environment();e.handle((name,args)=>args.p_action==='list'?{data:choices().map(c=>({...c,role:'admin'}))}:{data:e.store.a});
+  await e.init();await e.api.selectCompany('a');
+  e.handle(()=>({status:400,error:{message:'LAST_ADMIN'}}));
+  for(const action of ['role','block'])await assert.rejects(e.api.manage(action,{p_member:'u1',p_role:'member'}),x=>x.code==='LAST_ADMIN'&&x.message.includes('最後の管理者')&&x.message.includes('先に別の管理者'));
+  assert.equal(e.api.company.role,'admin');assert.equal(e.api.online,true);
+});
+
 test('failed or stale transfers never apply a local demotion to another company',async()=>{
   const e=environment();await e.init();await e.api.selectCompany('a');e.fail('DENIED');
   await assert.rejects(e.api.manage('transfer_admin',{p_member:'next-admin'}),x=>x.code==='DENIED');assert.equal(e.api.company.id,'a');
