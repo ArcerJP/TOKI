@@ -54,7 +54,7 @@ for(const width of [1440,390])test(`returning user opens the verified board with
   assert.equal(e.$('schedule-app').hidden,false);assert.equal(e.$('mobile-app').hidden,width>767);
   assert.equal(e.w.TokiShared.online,true);
   assert.equal(e.$('company-button').querySelectorAll('svg.account-icon').length,1);
-  if(width<768)assert.equal(e.$('mobile-app').querySelectorAll('button[aria-label="会社・アカウント"] svg.account-icon').length,1);
+  if(width<768)assert.equal(e.$('mobile-app').querySelectorAll('button[aria-label="組織・アカウント"] svg.account-icon').length,1);
   // An explicit switch and a later logout must still show the original controls.
   e.w.TokiShared.leaveView();await flush();assertGate(e);assert.match(e.$('company-list').textContent,/予定表を開く/);
   await e.w.TokiShared.logout();await flush();assertGate(e);assert.equal(e.$('company-login').hidden,false);assert.equal(e.$('company-signed-in').hidden,true);
@@ -64,7 +64,7 @@ test('no session and no selected company show the appropriate gate after checkin
   const signedOut=await environment(t);assertLoading(signedOut);await signedOut.signIn(null);await signedOut.finished;assertGate(signedOut);
   assert.equal(signedOut.$('company-login').hidden,false);assert.deepEqual(signedOut.calls,[]);
   const chooser=await environment(t,{selected:false});await chooser.signIn();assertLoading(chooser);await chooser.companies();await chooser.finished;assertGate(chooser);
-  assert.match(chooser.$('auth-message').textContent,/開く会社/);assert.deepEqual(chooser.calls,['list']);
+  assert.match(chooser.$('auth-message').textContent,/開く組織/);assert.deepEqual(chooser.calls,['list']);
 });
 
 test('revoked membership never reveals an old board and leaves the gate usable',async t=>{

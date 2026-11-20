@@ -12,7 +12,7 @@
   $("auth-gate").hidden=true;
   $("app-loading").hidden=!initializing;
   $("copy-link").hidden=!shared.enabled;
-  if(shared.enabled)$("storage-note").textContent="参加を許可された会社のメンバーが予定を閲覧・編集できます。変更は約5秒ごとに同期します。オフラインでは保存済みの予定を閲覧できます。";
+  if(shared.enabled)$("storage-note").textContent="参加を許可された組織のメンバーが予定を閲覧・編集できます。変更は約5秒ごとに同期します。オフラインでは保存済みの予定を閲覧できます。";
   const START=480, END=1440, SPAN=END-START, KEY="toki-availability-v3",LEGACY_KEY="toki-availability-2026-v1",VIEW_KEY="toki-selected-date";
   const colors=["#2b7558","#367f88","#526ab1","#896899"];
   const minute=t=>{const [h,m]=t.split(":").map(Number);return h*60+m;};
@@ -261,7 +261,7 @@
 
   $("auth-retry").onclick=()=>location.reload();
   $("copy-link").onclick=async()=>{
-    try{await navigator.clipboard.writeText(shared.shareUrl());toast("会社URLをコピーしました");}
+    try{await navigator.clipboard.writeText(shared.shareUrl());toast("組織URLをコピーしました");}
     catch{$("share-url").value=shared.shareUrl();$("share-dialog").showModal();$("share-url").select();}
   };
   $("close-share").onclick=()=>$("share-dialog").close();

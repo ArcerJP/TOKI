@@ -97,20 +97,20 @@ test('network errors explain uncertain role outcomes without claiming success',a
 });
 
 test('only stopped members have removal controls and cancelling never sends a request',async t=>{
-  const e=environment(t);await e.open();const buttons=[...e.$('company-members').querySelectorAll('button')].filter(b=>b.textContent==='団体から削除');
+  const e=environment(t);await e.open();const buttons=[...e.$('company-members').querySelectorAll('button')].filter(b=>b.textContent==='組織から削除');
   assert.equal(buttons.length,1);assert.match(buttons[0].parentElement.textContent,/blocked@example.test/);
   e.w.confirm=message=>{assert.match(message,/blocked@example.test/);assert.match(message,/予定表の人の行・可能時間・MTGは残ります/);assert.match(message,/再参加には改めて招待・承認/);return false;};
   await buttons[0].onclick();assert.equal(e.calls.some(c=>c[0]==='remove_member'),false);
   e.$('company-dialog').close();e.listRole='member';await e.open();assert.equal(e.$('company-admin').hidden,true);assert.equal(e.$('company-members').textContent,'');
 });
 test('confirmed removal is submitted once and the removed member disappears from the refreshed list',async t=>{
-  const e=environment(t);await e.open();e.w.confirm=()=>true;const button=[...e.$('company-members').querySelectorAll('button')].find(b=>b.textContent==='団体から削除');
+  const e=environment(t);await e.open();e.w.confirm=()=>true;const button=[...e.$('company-members').querySelectorAll('button')].find(b=>b.textContent==='組織から削除');
   const d=deferred();e.removal=d;const pending=button.onclick();await button.onclick();assert.equal(e.$('company-admin-controls').disabled,true);
   assert.equal(e.calls.filter(c=>c[0]==='remove_member').length,1);assert.equal(e.calls.find(c=>c[0]==='remove_member')[1].p_member,'blocked');
   d.resolve();await pending;assert.doesNotMatch(e.$('company-members').textContent,/blocked@example.test/);assert.match(e.$('company-members').textContent,/next@example.test/);assert.equal(e.$('company-admin-controls').disabled,false);
 });
 test('failed removal keeps the row and describes an uncertain network outcome',async t=>{
-  const e=environment(t);await e.open();e.w.confirm=()=>true;const button=[...e.$('company-members').querySelectorAll('button')].find(b=>b.textContent==='団体から削除');
+  const e=environment(t);await e.open();e.w.confirm=()=>true;const button=[...e.$('company-members').querySelectorAll('button')].find(b=>b.textContent==='組織から削除');
   const d=deferred();e.removal=d;const pending=button.onclick();d.reject(Object.assign(new Error('Failed'),{code:'NETWORK'}));await pending;
   assert.match(e.$('company-members').textContent,/blocked@example.test/);assert.match(e.$('company-admin-error').textContent,/変更結果を確認できません/);assert.equal(e.$('company-admin-controls').disabled,false);
 });

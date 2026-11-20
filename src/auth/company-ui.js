@@ -10,7 +10,7 @@ window.TokiCompanyUI=()=>{
     const user=shared.user,company=shared.company,list=shared.companies;
     $('company-access').hidden=false;$('company-login').hidden=Boolean(user);$('company-signed-in').hidden=!user;
     $('company-current-user').textContent=user?.email||'';
-    $('company-button').hidden=!company;$('company-button').title=company?'会社・アカウント（'+company.name+'）':'会社・アカウント';
+    $('company-button').hidden=!company;$('company-button').title=company?'組織・アカウント（'+company.name+'）':'組織・アカウント';
     if(company?.role!=='admin')clearAdmin();
     if(!company)$('company-admin-status').textContent='';
     $('company-join').hidden=!user;$('company-code').disabled=pending;
@@ -24,8 +24,8 @@ window.TokiCompanyUI=()=>{
       container.append(row);
     }
     $('company-login').disabled=pending;$('company-join').disabled=pending;
-    if(user&&!company)$('auth-message').textContent=list.some(c=>c.status==='active')?'開く会社を選んでください。':'会社コードで参加申請するか、管理者からの招待をご確認ください。';
-    else if(!user)$('auth-message').textContent='Googleで本人確認後、招待・承認済みの会社だけにアクセスできます。';
+    if(user&&!company)$('auth-message').textContent=list.some(c=>c.status==='active')?'開く組織を選んでください。':'組織コードで参加申請するか、管理者からの招待をご確認ください。';
+    else if(!user)$('auth-message').textContent='Googleで本人確認後、招待・承認済みの組織だけにアクセスできます。';
   }
   $('company-login').onclick=()=>run(()=>shared.login($('company-code').value));
   $('company-join').onclick=()=>run(()=>shared.join($('company-code').value));
@@ -50,7 +50,7 @@ window.TokiCompanyUI=()=>{
       await shared.listCompanies();if(!current())return;
       if(shared.company.role!=='admin'){$('company-admin-status').textContent='一般メンバー';return;}
       const data=await shared.manage('members');if(!current()||shared.company.role!=='admin')return;
-      $('company-admin-status').textContent='団体の管理者';$('company-admin').hidden=false;adminBusy(pending);
+      $('company-admin-status').textContent='組織の管理者';$('company-admin').hidden=false;adminBusy(pending);
       const action=async(kind,params)=>{
         if(pending||!current()||shared.company.role!=='admin'||!shared.online)return;
         adminBusy(true);$('company-admin-error').textContent='';
@@ -63,10 +63,10 @@ window.TokiCompanyUI=()=>{
         if(m.status!=='active')row.append(button(m.status==='pending'?'参加を承認':'参加を再許可',()=>action('approve',{p_member:m.id})));
         else {const demote=m.role==='admin';row.append(button(demote?'一般メンバーに変更':'管理者に変更',()=>{
           if(pending||!current()||shared.company.role!=='admin'||!shared.online)return;
-          if(confirm(m.email+'を'+(demote?'一般メンバー':'管理者')+'に変更しますか？\n'+(demote?'対象者は、この団体の管理操作ができなくなります。':'他の参加者の権限は変わりません。')))return action('role',{p_member:m.id,p_role:demote?'member':'admin'});
+          if(confirm(m.email+'を'+(demote?'一般メンバー':'管理者')+'に変更しますか？\n'+(demote?'対象者は、この組織の管理操作ができなくなります。':'他の参加者の権限は変わりません。')))return action('role',{p_member:m.id,p_role:demote?'member':'admin'});
         }));}
-        if(m.status!=='blocked')row.append(button('アクセスを停止',()=>{if(pending||!current()||shared.company.role!=='admin'||!shared.online)return;if(confirm(m.email+'の会社へのアクセスを停止しますか？端末のオフラインデータは即時には消去できません。'))return action('block',{p_member:m.id});}));
-        else {const remove=button('団体から削除',()=>{if(pending||!current())return;if(confirm(m.email+' を「'+company.name+'」の参加者一覧から削除しますか？\n予定表の人の行・可能時間・MTGは残ります。\nアクセス停止の記録も削除され、再参加には改めて招待・承認が必要です。'))return action('remove_member',{p_member:m.id});});remove.className='danger';row.append(remove);}
+        if(m.status!=='blocked')row.append(button('アクセスを停止',()=>{if(pending||!current()||shared.company.role!=='admin'||!shared.online)return;if(confirm(m.email+'の組織へのアクセスを停止しますか？端末のオフラインデータは即時には消去できません。'))return action('block',{p_member:m.id});}));
+        else {const remove=button('組織から削除',()=>{if(pending||!current())return;if(confirm(m.email+' を「'+company.name+'」の参加者一覧から削除しますか？\n予定表の人の行・可能時間・MTGは残ります。\nアクセス停止の記録も削除され、再参加には改めて招待・承認が必要です。'))return action('remove_member',{p_member:m.id});});remove.className='danger';row.append(remove);}
         $('company-members').append(row);
       }
       for(const invite of data.invites){const row=el('div');row.className='company-choice';row.append(el('span',invite.email+(Date.parse(invite.expiresAt)<=Date.now()?'（期限切れ）':'（招待済み）')),button('招待を取り消す',()=>action('cancel_invite',{p_email:invite.email})));$('company-invites').append(row);}

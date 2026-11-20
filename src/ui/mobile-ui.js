@@ -55,7 +55,7 @@ window.TokiMobileUI = function (bridge) {
     const active=root.contains(document.activeElement)?document.activeElement.getAttribute('aria-label'):null;
     const board=ctx.board;
     header.replaceChildren();const brand=el('div','mob-brand');brand.append(el('strong',null,'TOKI'),el('span','mob-status',$('save-status').textContent));header.append(brand);
-    if(!$('company-button').hidden){const account=button('',()=>openShared('company-button'),'会社・アカウント','account-button');account.setAttribute('aria-haspopup','dialog');account.title=$('company-button').title;account.append($('company-button').querySelector('svg').cloneNode(true));brand.append(account);}
+    if(!$('company-button').hidden){const account=button('',()=>openShared('company-button'),'組織・アカウント','account-button');account.setAttribute('aria-haspopup','dialog');account.title=$('company-button').title;account.append($('company-button').querySelector('svg').cloneNode(true));brand.append(account);}
     const notice=$('connection-status');if(!notice.hidden)header.append(el('p','mob-notice',notice.textContent));
     if(!$('update-app').hidden)header.append(button('最新版に更新',()=>openShared('update-app')));
     content.replaceChildren();
@@ -78,8 +78,8 @@ window.TokiMobileUI = function (bridge) {
     }else{
       content.append(el('h1',null,'その他'));
       actionCard('Googleカレンダーから取り込む','選択したカレンダーの共通の空き時間を反映','google-import-button');
-      if(!$('copy-link').hidden)actionCard('会社URLをコピー','参加にはGoogleログインと管理者の許可が必要です','copy-link');
-      if(!$('company-button').hidden)actionCard('会社・アカウント','会社の切り替え・ログアウト・参加者の管理','company-button');
+      if(!$('copy-link').hidden)actionCard('組織URLをコピー','参加にはGoogleログインと管理者の許可が必要です','copy-link');
+      if(!$('company-button').hidden)actionCard('組織・アカウント','組織の切り替え・ログアウト・参加者の管理','company-button');
       const history=el('div','mob-actions');for(const [id,name] of [['undo','↶ 元に戻す'],['redo','↷ やり直す']]){const b=button(name,()=>openShared(id));b.disabled=$(id).disabled;history.append(b);}content.append(history);
       if(!$('install-app').hidden)actionCard('アプリをインストール','ホーム画面から開く','install-app');
       content.append(el('p','mob-note','iPhone：Safariの共有メニュー →「ホーム画面に追加」でアプリとして使えます。'));

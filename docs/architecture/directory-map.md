@@ -14,7 +14,7 @@ TOKI/
 ├── src/                  アプリのJavaScript・CSS
 │   ├── core/             共通モデル・時間計算
 │   ├── app/              起動・状態連携・PWA操作
-│   ├── auth/             会社・認証・共有
+│   ├── auth/             組織・認証・共有
 │   ├── calendar/         Google取込
 │   ├── meetings/         MTGメニュー・書き出し
 │   └── ui/               PC・スマートフォンUI

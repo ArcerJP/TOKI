@@ -8,7 +8,7 @@
 | --- | --- |
 | src/core/ | model、availability、schedule、mobile-model。共通計算・検証・編集内容の変換 |
 | src/app/ | app、data、security、pwa。起動・状態連携・公開初期データ・PWA操作 |
-| src/auth/ | auth-storage、shared、company-ui、company.css。会社・認証・共有データ通信 |
+| src/auth/ | auth-storage、shared、company-ui、company.css。組織・認証・共有データ通信 |
 | src/calendar/ | calendar-import、google-calendar、google-import-ui。Google取込 |
 | src/meetings/ | meeting-menu、meeting-export-ui。MTGメニューと書き出し |
 | src/ui/ | availability-ui、group-view、row-drag、mobile-ui、styles.css、mobile.css。PC/スマホの表示・操作 |
@@ -30,7 +30,7 @@
 - `prepare-site.cjs` はこの表のファイルだけをsiteへコピーする。publicを丸ごと公開する方式ではない。
 - `worker()` はpublic/sw.jsと、公開パス・資産内容から生成する。物理ソースパスをキャッシュキーへ混ぜない。
 - siteは生成物。直接編集せず、元のsrc/publicを編集して再生成する。
-- public/config.jsには公開可能な設定だけを置く。秘密値・本番予定・会社の非公開情報を置かない。
+- public/config.jsには公開可能な設定だけを置く。秘密値・本番予定・組織の非公開情報を置かない。
 
 Service Workerは公開位置により既定のscopeが変わるため、公開時の `/TOKI/sw.js` を維持する。[MDN](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerContainer/register#scope)（2026-10-15確認）。GitHub Pagesは従来どおりsite成果物を配信する。[GitHub公式](https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site)
 
