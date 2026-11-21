@@ -5,10 +5,11 @@ const S=require('../src/core/schedule.js');
 const date='2026-10-05';
 const seed=()=>S.reserve({schemaVersion:4,people:['A','B','C','D'],groups:[{id:'a',name:'局A',members:[0,1]},{id:'b',name:'局B',members:[1,2]}],events:[0,1,2].map(person=>({id:'e'+person,person,date,start:540,end:1080})),meetings:[]},'a',date,[{start:780,end:840}]);
 const flush=()=>new Promise(resolve=>setTimeout(resolve,40));
-async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false}={}){
+async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false,launchDate=date}={}){
   const errors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',e=>errors.push(e));
   const dom=new JSDOM(fs.readFileSync(sourcePath('index.html'),'utf8'),{url:'https://example.test/TOKI/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
   const w=dom.window,d=w.document,media=[];let board=seed(),version=1,hooks,online=true,saves=0,failSave=false;
+  w.Date=class extends w.Date {constructor(...args){super(...(args.length?args:[launchDate+'T12:00:00']));}};
   const access=scoped?{role:'member',personId:'00000000-0000-4000-8000-000000000001'}:undefined;
   if(scoped)board.rows=board.people.map((_,i)=>({id:'00000000-0000-4000-8000-00000000000'+(i+1),kind:i===1?'place':'person'}));
   board.groups[0].id=groupId;board.meetings.filter(m=>m.group==='a').forEach(m=>m.group=groupId);
@@ -21,7 +22,7 @@ async function environment(t,{width=390,coarse=false,shared=false,preselect=true
   w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
   const copies=[];Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>copies.push(text)}});
   w.TOKI_CONFIG={boardId:'test-board'};w.TOKI_DATA={people:[],dates:[date],availability:[]};w.TOKI_DATA_READY=Promise.resolve();
-  w.localStorage.setItem('toki-selected-date',date);w.localStorage.setItem('toki-availability-v3',JSON.stringify({version:3,board}));
+  w.localStorage.setItem('toki-selected-date','2026-10-11');w.localStorage.setItem('toki-availability-v3',JSON.stringify({version:3,board}));
   if(preselect)w.localStorage.setItem('toki-view-v1:'+(shared?'shared':'local')+':groups',JSON.stringify({version:1,selected:[groupId,'b','@unassigned']}));
   w.TokiShared={enabled:shared,get online(){return online;},shareUrl:()=>'',initialize:async h=>{hooks=h;h.board({version,payload:board,access});},save:async next=>{if(failSave)throw Error('試験：保存失敗');saves++;board=structuredClone(next);return {version:++version,payload:board,access};},refresh:async()=>{}};
   for(const name of ['model','availability','schedule','availability-ui','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-ui','group-view','company-ui','app'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
@@ -42,6 +43,25 @@ test('a valid group ID named __proto__ remains ordinary persisted exclusion data
   const saved=JSON.parse(e.w.localStorage.getItem('toki-view-v1:local:excluded'));
   assert.equal(Object.hasOwn(saved,'__proto__'),true);assert.deepEqual(saved.__proto__,['A']);
   assert.equal(e.$('mobile-app').querySelector('.mob-excluded').textContent,'A');assert.equal(JSON.stringify(e.current()),before);
+});
+
+for(const width of [1440,390])test(`fresh starts use today and the shared month picker retains an in-memory date (${width}px)`,async t=>{
+  const e=await environment(t,{width,launchDate:'2028-02-28'});
+  const open=()=>width===1440?e.$('date-select').click():e.button('日付を選択').click();
+  assert.match(e.$('date-select').textContent,/2028年2月28日/);
+  open();
+  assert.equal(e.$('date-picker').open,true);
+  assert.equal(e.$('picker-month').textContent,'2028年 2月');
+  assert.equal(e.$('picker-days').querySelectorAll('button').length,29);
+  assert.equal(e.$('picker-days').querySelector('[aria-current="date"]').dataset.date,'2028-02-28');
+  e.$('next-month').click();
+  e.$('picker-days').querySelector('[data-date="2028-03-02"]').click();
+  assert.equal(e.$('date-picker').open,false);
+  e.w.dispatchEvent(new e.w.Event('pageshow'));
+  assert.match(e.$('date-select').textContent,/2028年3月2日/);
+  open();
+  e.$('picker-today').click();
+  assert.match(e.$('date-select').textContent,/2028年2月28日/);
 });
 
 test('members can edit their own and place times on mobile, while other people and MTGs are view-only',async t=>{

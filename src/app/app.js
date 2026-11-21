@@ -13,7 +13,7 @@
   $("app-loading").hidden=!initializing;
   $("copy-link").hidden=!shared.enabled;
   if(shared.enabled)$("storage-note").textContent="参加を許可された組織のメンバーが予定を閲覧・編集できます。変更は約5秒ごとに同期します。オフラインでは保存済みの予定を閲覧できます。";
-  const START=480, END=1440, SPAN=END-START, KEY="toki-availability-v3",LEGACY_KEY="toki-availability-2026-v1",VIEW_KEY="toki-selected-date";
+  const START=480, END=1440, SPAN=END-START, KEY="toki-availability-v3",LEGACY_KEY="toki-availability-2026-v1";
   const colors=["#2b7558","#367f88","#526ab1","#896899"];
   const minute=t=>{const [h,m]=t.split(":").map(Number);return h*60+m;};
   const time=m=>`${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
@@ -45,8 +45,11 @@
   let collapsed=new Set();
   try{collapsed=new Set(JSON.parse(localStorage.getItem(prefKey('collapsed'))||"[]"));}catch{}
   availability.forEach((days,person)=>days.forEach((value,d)=>value.split(",").filter(Boolean).forEach((range,n)=>{const [start,end]=range.split("-").map(minute);events.push({id:`seed-${person}-${d}-${n}`,person,date:dates[d],start,end});})));
-  let selected=dates[0], undo=[], redo=[], drag=null, toastTimer, loadFailed=false;
-  try{const savedDate=localStorage.getItem(VIEW_KEY);if(M.validDate(savedDate))selected=savedDate;}catch{}
+  function today(){
+    const now=new Date();
+    return [String(now.getFullYear()).padStart(4,'0'),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+  }
+  let selected=today(), pickerMonth, undo=[], redo=[], drag=null, toastTimer, loadFailed=false;
   try{if(!shared.enabled){const raw=localStorage.getItem(KEY)||localStorage.getItem(LEGACY_KEY);if(raw){const saved=JSON.parse(raw);const board=saved.version===3?saved.board:M.upgrade(saved.version===2?saved.board:{people,dates,events:saved.events});if(!M.valid(board))throw Error("Invalid saved data");assign(board);}}}
   catch{loadFailed=true;$("save-status").textContent="保存データを読めませんでした";}
   function toast(message){$("toast").textContent=message;$("toast").hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$("toast").hidden=true,3500);}
@@ -122,9 +125,76 @@
     if(pendingBoard){const board=pendingBoard;pendingBoard=null;receiveBoard(board);}
     if(pendingLocalBoard){assign(pendingLocalBoard);pendingLocalBoard=null;undo=[];redo=[];render();toast('別タブの変更を反映しました');}
   }
-  function options(target,values,text){values.forEach((v,i)=>{const option=el("option",null,text(v,i));option.value=v;target.append(option);});}
-  function renderDates(){const week=M.weekDates(selected);$("date-select").replaceChildren();options($("date-select"),week,label);$("date-select").value=selected;$("week-range").textContent=`${label(week[0])} — ${label(week[6])}`;for(const [id,offset] of [["previous",-1],["next",1],["previous-week",-7],["next-week",7]])$(id).disabled=!M.shiftDate(selected,offset);}
-  function selectDate(date){if(!M.validDate(date)||drag||rowDrag?.active||dialogOpen())return;selected=date;try{localStorage.setItem(VIEW_KEY,date);}catch{}render();}
+  const dateMoves=[['previous',-1],['next',1],['previous-week',-7],['next-week',7]];
+  function renderDates(){
+    const week=M.weekDates(selected);
+    $('date-select').textContent=label(selected)+' ▾';
+    $('date-select').setAttribute('aria-label','日付を選択：'+label(selected));
+    $('week-range').textContent=`${label(week[0])} — ${label(week[6])}`;
+    for(const [id,offset] of dateMoves)$(id).disabled=!M.shiftDate(selected,offset);
+  }
+  function selectDate(date){if(!M.validDate(date)||drag||rowDrag?.active||dialogOpen())return;selected=date;render();}
+  function monthAt(month,offset){
+    const date=new Date(month+'-01T00:00:00Z');
+    date.setUTCMonth(date.getUTCMonth()+offset);
+    const key=date.toISOString().slice(0,7);
+    return key>=M.MIN_DATE.slice(0,7)&&key<=M.MAX_DATE.slice(0,7)?key:null;
+  }
+  function chooseDate(date){
+    $('date-picker').close();
+    selectDate(date);
+  }
+  function renderMonth(focusDate=selected){
+    const first=new Date(pickerMonth+'-01T00:00:00Z'),last=new Date(first);
+    last.setUTCMonth(first.getUTCMonth()+1,0);
+    $('picker-month').textContent=first.getUTCFullYear()+'年 '+(first.getUTCMonth()+1)+'月';
+    $('previous-month').disabled=!monthAt(pickerMonth,-1);
+    $('next-month').disabled=!monthAt(pickerMonth,1);
+    const cells=$('picker-days');cells.replaceChildren();
+    for(let i=0;i<first.getUTCDay();i++)cells.append(el('span'));
+    const current=today();
+    for(let number=1;number<=last.getUTCDate();number++){
+      const date=pickerMonth+'-'+String(number).padStart(2,'0');
+      const button=el('button',null,String(number));
+      button.type='button';button.disabled=!M.validDate(date);button.dataset.date=date;button.tabIndex=-1;
+      button.setAttribute('aria-label',label(date));button.setAttribute('aria-pressed',String(date===selected));
+      if(date===current)button.setAttribute('aria-current','date');
+      button.onclick=()=>chooseDate(date);cells.append(button);
+    }
+    const focus=cells.querySelector(`button[data-date="${focusDate}"]:enabled`)||cells.querySelector('button:enabled');
+    focus.tabIndex=0;
+    return focus;
+  }
+  function openDatePicker(){
+    if(!ready||drag||rowDrag?.active||dialogOpen())return;
+    pickerMonth=selected.slice(0,7);
+    const input=$('picker-direct-date');
+    input.value=selected;input.min=M.MIN_DATE;input.max=M.MAX_DATE;
+    const focus=renderMonth();
+    $('date-picker').showModal();focus.focus();
+  }
+  for(const [id,offset] of [['previous-month',-1],['next-month',1]])$(id).onclick=()=>{
+    const month=monthAt(pickerMonth,offset);
+    if(month){pickerMonth=month;renderMonth();}
+  };
+  $('picker-days').onkeydown=e=>{
+    const offset={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[e.key];
+    if(!offset||!e.target.dataset.date)return;
+    e.preventDefault();
+    const date=M.shiftDate(e.target.dataset.date,offset);
+    if(!date)return;
+    if(date.slice(0,7)!==pickerMonth){pickerMonth=date.slice(0,7);renderMonth(date).focus();return;}
+    e.target.tabIndex=-1;
+    const button=$('picker-days').querySelector(`button[data-date="${date}"]`);
+    button.tabIndex=0;button.focus();
+  };
+  $('close-date-picker').onclick=()=>$('date-picker').close();
+  $('picker-today').onclick=()=>chooseDate(today());
+  $('picker-form').onsubmit=e=>{
+    e.preventDefault();
+    const date=$('picker-direct-date').value;
+    if(M.validDate(date))chooseDate(date);
+  };
   function chartFor(date,interactive=true){
     const board=snapshot(),chart=el('div','chart'),rows=M.rows(board,interactive?collapsed:new Set()).filter(row=>!interactive||!groupView||groupView.visible(row.group?.id||row.context||'@unassigned'));
     const own=ownPerson();
@@ -198,7 +268,8 @@
   $("close-meeting").onclick=()=>{if(!busy)$("meeting-dialog").close();};
   $("meeting-dialog").addEventListener('cancel',e=>{if(busy)e.preventDefault();});
   $("undo").onclick=()=>history("undo");$("redo").onclick=()=>history("redo");
-  $("date-select").onchange=e=>selectDate(e.target.value);for(const [id,offset] of [["previous",-1],["next",1],["previous-week",-7],["next-week",7]])$(id).onclick=()=>selectDate(M.shiftDate(selected,offset));
+  $('date-select').onclick=openDatePicker;
+  for(const [id,offset] of dateMoves)$(id).onclick=()=>selectDate(M.shiftDate(selected,offset));
   document.addEventListener("keydown",e=>{if(e.key==="Escape"&&drag){cancelDrag();return;}if(document.querySelector("dialog[open]")||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();history(e.shiftKey?"redo":"undo");}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="y"){e.preventDefault();history("redo");}});
   let suppressClick=false;
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -416,7 +487,7 @@
   mobile=window.TokiMobileUI({
     context:()=>({board:snapshot(),date:selected,ready,busy,writable:editable(),pending:Boolean(pendingBoard||pendingLocalBoard),fingerprint:JSON.stringify(snapshot())}),
     interacting:()=>Boolean(drag||rowDrag?.active),
-    selectDate,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
+    selectDate,openDatePicker,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
     scoped:()=>Boolean(access),canManage,canEditRow,canAddPlace,ownPerson,isPlace,
     visibleGroup:id=>groupView.visible(id),openGroupView:()=>groupView.open(),
     commit:async(next,message,fingerprint)=>{

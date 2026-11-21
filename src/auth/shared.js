@@ -12,6 +12,8 @@
     NAME_TAKEN:'その名前はすでに使用されています。別の名前を入力してください。',
     MEMBER_EXISTS:'このアカウントはすでに登録されています。参加者一覧で確認してください。',
     SCHEDULE_BUSY:'登録済みのMTGと重なるため保存できません。',
+    INVITE_INVALID:'招待パスワードが違うか、すでに使われています。',
+    INVITE_LIMIT:'招待パスワードの入力失敗が続いたため、一時的に停止しました。時間を置くか、管理者へ参加を申請してください。',
   });
   const read=(key,fallback=null)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
   const write=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{emit('warning','端末に保存できません。オフライン閲覧や表示設定の保存が利用できない場合があります。');}};
@@ -190,7 +192,15 @@
       if(!success&&epoch===generation&&!user)emit('warning','この端末からログアウトしました。通信障害のためサーバー側の認証終了は確認できませんが、端末から自動ログインはしません。');
     });
   }
-  async function join(code){await rpc('join',{p_code:code});remove(PREFIX+'join-code');return listCompanies();}
+  async function join(code,{mode,name,password}={}){
+    const result=await rpc(mode==='invite'?'accept_invite':mode==='apply'?'apply':'join',{
+      p_code:code,...(mode==='invite'?{p_payload:password}:mode==='apply'?{p_name:name}:{})
+    });
+    remove(PREFIX+'join-code');
+    const list=await listCompanies();
+    if(mode&&list.some(c=>c.id===result.id&&c.status==='active'))await selectCompany(result.id);
+    return list;
+  }
   async function manage(action,extra={}){
     if(!company)throw error(messages.COMPANY,'COMPANY');
     const value=await rpc(action,{p_company:company.id,...extra});
@@ -199,7 +209,7 @@
       // not make a completed transfer look like a failed operation.
       company={...company,role:'member'};
       companies=companies.map(c=>c.id===company.id?company:c);remember();state();
-    }else if(action!=='members'){
+    }else if(!['members','invite_batch'].includes(action)){
       await listCompanies();
       if(company?.scopedSchedule)await refresh();
     }

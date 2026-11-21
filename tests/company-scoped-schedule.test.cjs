@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {randomBytes} = require('node:crypto');
 const {PGlite} = require('@electric-sql/pglite');
 
 test('scoped schedules protect person rows and preserve places when detached', async t => {
@@ -12,9 +13,9 @@ test('scoped schedules protect person rows and preserve places when detached', a
     create table auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz);
     create function auth.jwt() returns jsonb language sql as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     create function auth.uid() returns uuid language sql as $$select (auth.jwt()->>'sub')::uuid$$;`);
-  for (const file of ['schema.sql', 'companies.sql']) await db.exec(fs.readFileSync('database/' + file, 'utf8'));
+  for (const file of ['schema.sql', 'companies.sql', 'application-mail.sql']) await db.exec(fs.readFileSync('database/' + file, 'utf8'));
   const users = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const {id} = (await db.query('insert into auth.users values(gen_random_uuid(),$1,now()) returning id', [`test${i}@example.test`])).rows[0];
     const session = (await db.query('insert into auth.sessions values(gen_random_uuid(),$1) returning id', [id])).rows[0].id;
     await db.query("insert into auth.identities values($1,'google')", [id]);
@@ -66,11 +67,30 @@ test('scoped schedules protect person rows and preserve places when detached', a
   await assert.rejects(access(['open']), /DENIED/);
   await save(own.version, {...own.payload,events:[event('mine',0)]});
   await signIn(2);
-  await rpc('join', {p_code:org.code});
+  await assert.rejects(rpc('apply', {p_code:org.code}), /NAME_INVALID/);
+  await rpc('apply', {p_code:org.code,p_name:'Requested name'});
+  await rpc('apply', {p_code:org.code,p_name:'Duplicate request'});
   await assert.rejects(rpc('read'), /DENIED/);
+  const workerKey=randomBytes(32).toString('hex');
+  await db.exec('reset role');
+  await db.query("insert into toki_private.company_application_mail_worker(credential_hash) values(sha256(convert_to($1,'UTF8')))",[workerKey]);
+  await db.exec('set role anon');
+  async function notify(key,action='claim',id=null,lease=null){
+    const {data}=(await db.query('select public.toki_application_mail($1,$2,$3,$4) as data',[key,action,id,lease])).rows[0];
+    return data;
+  }
+  assert.deepEqual(await notify('0'.repeat(64)),{message:'DENIED'});
+  const message=await notify(workerKey);
+  assert.equal(message.name,'Requested name');
+  assert.equal(message.recipient,'test0@example.test');
+  assert.equal(message.email,'test2@example.test');
+  assert.equal(await notify(workerKey),null);
+  assert.deepEqual(await notify(workerKey,'ack',message.id,users[0].id),{acknowledged:false});
+  assert.deepEqual(await notify(workerKey,'ack',message.id,message.lease),{acknowledged:true});
   await signIn(0);
+  assert.equal((await rpc('members')).members.find(m=>m.id===users[2].id).requestName,'Requested name');
   await assert.rejects(rpc('approve', {p_member:users[2].id}), /NAME_INVALID/);
-  await rpc('approve', {p_member:users[2].id,p_name:'Applicant'});
+  await rpc('approve', {p_member:users[2].id,p_name:'Applicant',p_payload:'["open"]'});
   await access(['open']);
   board = await rpc('read');
   assert.equal(board.payload.people[3], 'Member');
@@ -122,4 +142,30 @@ test('scoped schedules protect person rows and preserve places when detached', a
   assert.equal(removed.board.payload.events.find(e=>e.id==='room').person,4);
   await signIn(1);
   await assert.rejects(rpc('read'), /DENIED/);
+
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync('database/enable-invitations.sql','utf8'));
+  await signIn(0);
+  const issue=batch=>rpc('invite_batch',{p_payload:JSON.stringify(batch)});
+  await assert.rejects(issue([{name:'New guest',groups:[]},{name:'New guest',groups:[]}]),/NAME_TAKEN/);
+  assert.deepEqual((await rpc('members')).pinInvites,[]);
+  const batch=await issue([{name:'New guest',groups:['open']},{name:'Cancelled guest',groups:['private']}]);
+  const invites=(await rpc('members')).pinInvites;
+  assert.equal(invites.length,2);
+  assert.ok(invites.every(invite=>!Object.hasOwn(invite,'password')));
+  assert.ok(batch.invitations.every(invite=>/^\d{6}$/.test(invite.password)));
+  await assert.rejects(rpc('invite',{p_email:'other@example.test',p_name:'Other'}),/UPDATE_REQUIRED/);
+  await rpc('cancel_pin_invite',{p_member:invites.find(invite=>invite.name==='Cancelled guest').id});
+  await signIn(3);
+  const redeem=index=>rpc('accept_invite',{p_code:org.code,p_payload:JSON.stringify(batch.invitations[index].password)});
+  await assert.rejects(rpc('join',{p_code:org.code}),/UPDATE_REQUIRED/);
+  await assert.rejects(redeem(1),/INVITE_INVALID/);
+  await assert.rejects(issue([{name:'Unauthorized',groups:[]}]),/DENIED/);
+  await redeem(0);
+  const guest=await rpc('read');
+  assert.deepEqual(guest.payload.people,['Existing','New guest']);
+  assert.deepEqual(guest.payload.groups.map(group=>group.id),['open']);
+  await signIn(4);
+  await assert.rejects(redeem(0),/INVITE_INVALID/);
+  await assert.rejects(rpc('read'),/DENIED/);
 });

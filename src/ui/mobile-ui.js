@@ -62,7 +62,9 @@ window.TokiMobileUI = function (bridge) {
     if(page==='schedule'){
       const datebar=el('div','mob-datebar');const prev=button('‹',()=>bridge.selectDate(M.shiftDate(ctx.date,-1)),'前の日');prev.disabled=!M.shiftDate(ctx.date,-1);
       const next=button('›',()=>bridge.selectDate(M.shiftDate(ctx.date,1)),'次の日');next.disabled=!M.shiftDate(ctx.date,1);
-      datebar.append(prev,button(ctx.date.slice(0,4)+'年 '+dayText(ctx.date)+' ▾',openDates,'日付を選択'),next);header.append(datebar);
+      const dateButton=button(ctx.date.slice(0,4)+'年 '+dayText(ctx.date)+' ▾',bridge.openDatePicker,'日付を選択');
+      dateButton.setAttribute('aria-haspopup','dialog');dateButton.setAttribute('aria-controls','date-picker');
+      datebar.append(prev,dateButton,next);header.append(datebar);
       const tools=el('div','mob-viewbar'),seg=el('div','mob-segments');
       for(const [id,name] of [['list','一覧'],['table','表']]){const b=button(name,()=>{view=id;storage.set('toki-mobile-view',id);render();});b.setAttribute('aria-pressed',String(view===id));seg.append(b);}
       tools.append(seg,button(`表示グループ ${board.groups.filter(g=>!hidden.has(g.id)).length}/${board.groups.length} ▾`,openFilter,'表示グループを選択'));
@@ -94,13 +96,6 @@ window.TokiMobileUI = function (bridge) {
     const tableScroll=root.querySelector('.mob-table-scroll');if(tableScroll){tableScroll.scrollLeft=tablePosition[0];tableScroll.scrollTop=tablePosition[1];}
   }
   function actionCard(title,desc,id){const b=button('',()=>openShared(id),title,'mob-action-card');b.append(el('strong',null,title),el('span','mob-muted',desc),el('span','mob-chevron','›'));b.disabled=$(id).disabled;content.append(b);}
-  function openDates(){
-    const {d}=dialog('日付を選択');let anchor=bridge.context().date;const week=el('div'),controls=el('div','mob-actions');
-    const renderWeek=()=>{week.replaceChildren();M.weekDates(anchor).forEach(date=>{const b=button(dayText(date),()=>{d.close();bridge.selectDate(date);});b.setAttribute('aria-current',date===bridge.context().date?'date':'false');week.append(b);});};
-    week.className='mob-week';controls.append(button('≪ 前の週',()=>{anchor=M.shiftDate(anchor,-7)||anchor;renderWeek();}),button('次の週 ≫',()=>{anchor=M.shiftDate(anchor,7)||anchor;renderWeek();}));d.append(controls,week);
-    const label=el('label',null,'日付を直接選択'),input=el('input');input.type='date';input.min=M.MIN_DATE;input.max=M.MAX_DATE;input.value=anchor;label.append(input);d.append(label,button('この日に移動',()=>{if(M.validDate(input.value)){d.close();bridge.selectDate(input.value);}}));
-    d.append(button('今日',()=>{const now=new Date(),date=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;d.close();bridge.selectDate(date);}));renderWeek();d.showModal();
-  }
   function openFilter(){
     bridge.openGroupView();
   }

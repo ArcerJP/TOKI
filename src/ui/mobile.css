@@ -100,9 +100,6 @@ html[data-ui="compact"] .toast { bottom: calc(84px + env(safe-area-inset-bottom)
 .mob-dialog .mob-dialog-head button { flex-shrink: 0; font-size: 13px; }
 .mob-dialog label { display: block; margin: 10px 0; font-size: 13px; }
 .mob-dialog .mob-checks label { display: flex; align-items: center; gap: 12px; min-height: 44px; border-bottom: 1px solid #edf1ee; margin: 0; padding: 10px 4px; overflow-wrap: anywhere; }
-.mob-dialog .mob-week { display: grid; grid-template-columns: 1fr; margin: 12px 0; }
-.mob-dialog .mob-week button { text-align: left; border-bottom: 1px solid #edf1ee; }
-.mob-dialog .mob-week button[aria-current="date"] { background: #e5f1e9; }
 .mob-dialog .mob-primary { color: #fff; background: #245d48; }
 .mob-dialog .mob-danger { color: #aa3a31; }
 html[data-ui="compact"] dialog.mob-editor { width: 100%; max-width: 760px; height: 100dvh; max-height: 100dvh; margin: auto; border-radius: 0; padding: max(8px,env(safe-area-inset-top)) 12px max(8px,env(safe-area-inset-bottom)); }

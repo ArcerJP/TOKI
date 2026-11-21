@@ -35,6 +35,28 @@ function environment(t){
   w.eval(fs.readFileSync(sourcePath('company-ui.js'),'utf8'));const ui=w.TokiCompanyUI();ui.render();
   return {w,$,shared,calls,members,ui,set roleChange(v){roleChange=v;},set roleFailure(v){roleFailure=v;},set removal(v){removal=v;},set listFailure(v){listFailure=v;},set listRole(v){listRole=v;},open:()=>$('company-button').onclick(),memberButton(email,label){const row=[...$('company-members').children].find(r=>r.querySelector('span').textContent===email);return [...row.querySelectorAll('button')].find(b=>b.textContent===label);}};
 }
+
+test('join screen requires exactly one entry method and submits the corresponding input',async t=>{
+  const e=environment(t),submissions=[];
+  e.shared.join=async (code,options)=>submissions.push({code,...options});
+  e.$('company-code').value='A'.repeat(32);
+  e.$('company-code').oninput();
+  assert.equal(e.$('company-join').disabled,true);
+  e.$('company-entry').querySelector('[value="invite"]').click();
+  assert.equal(e.$('company-entry-name-field').hidden,true);
+  const password=e.$('company-entry-password');
+  password.value='00009';password.oninput();
+  assert.equal(e.$('company-join').disabled,true);
+  password.value='000090';password.oninput();
+  assert.equal(e.$('company-join').disabled,false);
+  await e.$('company-join').onclick();
+  e.$('company-entry').querySelector('[value="apply"]').click();
+  assert.equal(e.$('company-entry-password-field').hidden,true);
+  const name=e.$('company-entry-name');
+  name.value='Applicant';name.oninput();
+  await e.$('company-join').onclick();
+  assert.deepEqual(submissions.map(input=>[input.mode,input.name,input.password]),[['invite','','000090'],['apply','Applicant','']]);
+});
 test('account refresh exposes per-member role controls only to current admins and renders names safely',async t=>{
   const e=environment(t);await e.open();
   assert.equal(e.$('company-admin').hidden,false);

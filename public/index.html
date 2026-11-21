@@ -65,7 +65,21 @@
             <label for="company-code">組織コード</label>
             <input id="company-code" autocomplete="off" maxlength="64" placeholder="管理者から届いたコード" />
             <button id="company-login" class="primary">Googleでログイン</button>
-            <button id="company-join" class="primary" hidden>この組織への参加を申請</button>
+            <fieldset id="company-entry" hidden>
+              <legend>参加方法</legend>
+              <label><input type="radio" name="company-entry-mode" value="invite"> 招待パスワードで参加</label>
+              <label><input type="radio" name="company-entry-mode" value="apply"> 氏名を入力して参加申請</label>
+              <div id="company-entry-password-field" hidden>
+                <label for="company-entry-password">招待パスワード</label>
+                <input id="company-entry-password" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" />
+              </div>
+              <div id="company-entry-name-field" hidden>
+                <label for="company-entry-name">氏名</label>
+                <input id="company-entry-name" type="text" maxlength="40" autocomplete="name" />
+                <small>組織の管理者に氏名とGoogleメールアドレスを通知します。</small>
+              </div>
+              <button id="company-join" class="primary" type="button" disabled>次へ</button>
+            </fieldset>
           </div>
           <div id="company-signed-in" hidden>
             <p id="company-current-user"></p>
@@ -106,8 +120,7 @@
           <button id="previous-week" aria-label="前の週" title="前の週へ">
             ≪</button
           ><button id="previous" aria-label="前の日" title="前の日へ">‹</button
-          ><label class="sr-only" for="date-select">表示する日</label
-          ><select id="date-select"></select
+          ><button type="button" id="date-select" class="date-picker-trigger" aria-label="日付を選択" aria-haspopup="dialog" aria-controls="date-picker">日付を選択</button
           ><button id="next" aria-label="次の日" title="次の日へ">›</button
           ><button id="next-week" aria-label="次の週" title="次の週へ">≫</button
           ><span class="member-count">16人</span>
@@ -189,6 +202,26 @@
         変更はこの端末の同じブラウザーに保存されます。ブラウザーの保存データを削除すると、編集内容も消えます。
       </p>
     </main>
+    <dialog id="date-picker" aria-labelledby="date-picker-title">
+      <div class="dialog-heading">
+        <h2 id="date-picker-title">日付を選択</h2>
+        <button type="button" id="close-date-picker" aria-label="閉じる">×</button>
+      </div>
+      <div class="date-picker-navigation">
+        <button type="button" id="previous-month" aria-label="前の月">‹</button>
+        <strong id="picker-month" aria-live="polite"></strong>
+        <button type="button" id="next-month" aria-label="次の月">›</button>
+      </div>
+      <div class="date-picker-grid" aria-hidden="true">
+        <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+      </div>
+      <div id="picker-days" class="date-picker-grid"></div>
+      <form id="picker-form" class="date-picker-actions">
+        <button type="button" id="picker-today">今日へ</button>
+        <input type="date" id="picker-direct-date" aria-label="日付を直接選択" required>
+        <button type="submit">移動</button>
+      </form>
+    </dialog>
     <dialog id="hint-dialog" aria-labelledby="hint-title">
       <div class="dialog-heading">
         <h2 id="hint-title">💡ヒント</h2>
@@ -442,11 +475,29 @@
       <p id="company-admin-error" class="error" role="alert" tabindex="-1"></p>
       <section id="company-admin" hidden><fieldset id="company-admin-controls"><h3>参加者の管理</h3>
         <p class="import-help">管理者は複数人に設定できます。最後の管理者は、一般メンバーへの変更・アクセス停止ができません。管理を引き継ぐ場合は、先に相手を管理者に変更してください。</p>
-        <div id="company-members"></div><h3>メールアドレスで招待</h3>
+        <div id="company-members"></div>
+        <section id="company-pin-invites" hidden>
+          <h3>招待パスワードの一括発行</h3>
+          <label for="company-invite-names">予定表の表示名（1行に1人）</label>
+          <textarea id="company-invite-names" rows="3" maxlength="1230"></textarea>
+          <div id="company-invite-groups"></div>
+          <button id="company-issue-pins" type="button">まとめて発行</button>
+          <section id="company-issued-pins" hidden>
+            <h4>今回発行した招待</h4>
+            <p class="import-help">招待パスワードはここで一度だけ表示します。招待する本人に個別に送ってください。</p>
+            <div id="company-issued-messages"></div>
+            <button id="company-copy-pins" type="button">全部コピー</button>
+            <span id="company-pin-status" role="status"></span>
+          </section>
+          <h4>未使用の招待</h4>
+          <div id="company-unused-pins"></div>
+        </section>
+        <section id="company-legacy-invite" hidden><h3>メールアドレスで招待</h3>
         <p class="import-help">登録したGoogleアカウントでログインすると参加できます。有効期間は7日間。メールは自動送信されません。組織URLを別途伝えてください。</p>
         <div class="company-form"><label for="company-invite-email">招待先のGoogleメールアドレス</label><input id="company-invite-email" type="email" autocomplete="off" />
           <label id="company-invite-name-label" for="company-invite-name" hidden>予定表の表示名</label><input id="company-invite-name" maxlength="40" autocomplete="off" hidden />
-          <button id="company-invite-button">招待を登録</button></div><div id="company-invites"></div>
+          <button id="company-invite-button">招待を登録</button></div></section>
+        <div id="company-invites"></div>
       </fieldset></section>
     </dialog>
     <dialog id="google-import-dialog" aria-labelledby="google-import-title">

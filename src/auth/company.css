@@ -4,6 +4,19 @@
 .company-form label { font-weight:600; }
 .company-form input { min-width:0; width:100%; }
 .company-form button, .company-actions button { min-height:44px; }
+#company-entry { margin:0; min-width:0; padding:10px; border:1px solid var(--line); border-radius:8px; }
+#company-entry > label { display:flex; align-items:center; gap:8px; min-height:44px; font-weight:500; }
+#company-entry input[type="radio"] { width:20px; height:20px; flex:none; accent-color:var(--green); }
+#company-entry > div { margin:6px 0 10px; }
+#company-entry small { display:block; margin-top:6px; color:#61766d; }
+#company-join { width:100%; margin-top:6px; }
+#company-pin-invites textarea { display:block; width:100%; margin:6px 0; resize:vertical; white-space:pre-wrap; }
+#company-invite-groups { margin-block:8px; }
+#company-invite-groups details { padding:6px; }
+#company-issue-pins, #company-copy-pins, #company-issued-pins button { min-height:44px; }
+#company-issued-messages label { font-weight:600; overflow-wrap:anywhere; }
+.company-group-choices label { display:flex; align-items:center; gap:8px; min-height:36px; }
+.company-group-choices input { min-width:20px; height:20px; }
 .company-actions { display:flex; flex-wrap:wrap; gap:8px; margin-block:12px; }
 .company-choice { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-bottom:1px solid #dce5e2; }
 .company-choice span, .company-choice strong { overflow-wrap:anywhere; }

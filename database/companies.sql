@@ -40,13 +40,61 @@ create table if not exists toki_private.company_join_limits (
 -- Install the compatible RPC first. The rollout enables the stricter schedule
 -- contract once the UI is deployed. Reapplying this file preserves that state.
 alter table toki_private.companies add column if not exists scoped_schedule boolean not null default false;
+alter table toki_private.companies add column if not exists invitation_v2 boolean not null default false;
 alter table toki_private.company_members add column if not exists person_id uuid;
 alter table toki_private.company_members add column if not exists visible_groups text[] not null default '{}';
+alter table toki_private.company_members add column if not exists request_name text;
 alter table toki_private.company_invites add column if not exists display_name text;
 create unique index if not exists company_member_person_unique
   on toki_private.company_members(company_id,person_id) where person_id is not null;
 alter table toki_private.company_join_limits enable row level security;
 revoke all on toki_private.company_join_limits from public,anon,authenticated;
+
+create table if not exists toki_private.company_pin_key (
+  singleton boolean primary key default true check(singleton),
+  secret text not null
+);
+insert into toki_private.company_pin_key(secret) values(gen_random_uuid()::text || gen_random_uuid()::text)
+  on conflict do nothing;
+create table if not exists toki_private.company_pin_invites (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references toki_private.companies(id),
+  pin_hash bytea not null,
+  display_name text,
+  visible_groups text[] not null,
+  created_at timestamptz not null default now(),
+  disabled_at timestamptz,
+  unique(company_id,pin_hash)
+);
+create table if not exists toki_private.company_pin_failures (
+  company_id uuid primary key references toki_private.companies(id),
+  started_at timestamptz not null,
+  failures integer not null check(failures between 1 and 20)
+);
+alter table toki_private.company_pin_key enable row level security;
+alter table toki_private.company_pin_invites enable row level security;
+alter table toki_private.company_pin_failures enable row level security;
+revoke all on toki_private.company_pin_key,toki_private.company_pin_invites,toki_private.company_pin_failures from public,anon,authenticated;
+
+create or replace function toki_private.company_pin_hash(org uuid, pin text)
+returns bytea language sql stable set search_path='' as $$
+  select sha256(convert_to(secret || org::text || pin,'UTF8')) from toki_private.company_pin_key
+$$;
+revoke all on function toki_private.company_pin_hash(uuid,text) from public,anon,authenticated;
+
+create table if not exists toki_private.company_application_mail (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references toki_private.companies(id),
+  requester uuid not null references auth.users(id) on delete cascade,
+  administrator uuid not null references auth.users(id) on delete cascade,
+  requested_at timestamptz not null,
+  next_attempt_at timestamptz not null default now(),
+  lease_id uuid,
+  attempts integer not null default 0,
+  unique(company_id,requester,administrator,requested_at)
+);
+alter table toki_private.company_application_mail enable row level security;
+revoke all on toki_private.company_application_mail from public,anon,authenticated;
 
 -- Used only by the project owner in the SQL Editor. Does not copy or change the board.
 create or replace function toki_private.bootstrap_company(p_board text,p_name text,p_email text)
@@ -124,22 +172,68 @@ $$;
 -- before the invited account signs in.
 create or replace function toki_private.check_schedule_invitations(org uuid, board jsonb, new_name text, skip_email text)
 returns void language plpgsql stable set search_path='' as $$
+declare reserved_count integer; reserved_collision boolean;
 begin
-  if exists(select 1 from toki_private.company_invites i where i.company_id=org and i.display_name is not null
-    and i.expires_at>now() and i.email is distinct from skip_email
-    and (toki_private.name_key(i.display_name)=toki_private.name_key(new_name)
+  with reserved as (
+    select i.display_name from toki_private.company_invites i where i.company_id=org and i.display_name is not null
+      and i.expires_at>now() and i.email is distinct from skip_email
+    union all
+    select i.display_name from toki_private.company_pin_invites i where i.company_id=org and i.disabled_at is null
+  )
+  select count(*),coalesce(bool_or(toki_private.name_key(i.display_name)=toki_private.name_key(new_name)
       or exists(select 1 from jsonb_array_elements_text(board->'people') p(name)
-        where toki_private.name_key(name)=toki_private.name_key(i.display_name)))) then
-    raise exception 'NAME_TAKEN';
-  end if;
+        where toki_private.name_key(name)=toki_private.name_key(i.display_name))),false)
+    into reserved_count,reserved_collision from reserved i;
+  if reserved_collision then raise exception 'NAME_TAKEN'; end if;
   if new_name is not null and exists(select 1 from jsonb_array_elements_text(board->'people') p(name)
     where toki_private.name_key(name)=toki_private.name_key(new_name)) then raise exception 'NAME_TAKEN'; end if;
-  if jsonb_array_length(board->'people') + (new_name is not null)::integer +
-      (select count(*) from toki_private.company_invites i where i.company_id=org
-        and i.display_name is not null and i.expires_at>now() and i.email is distinct from skip_email)>100
-    then raise exception 'LIMIT'; end if;
+  if jsonb_array_length(board->'people') + (new_name is not null)::integer + reserved_count>100 then raise exception 'LIMIT'; end if;
 end;
 $$;
+
+create or replace function toki_private.checked_visible_groups(board jsonb, choices jsonb)
+returns text[] language plpgsql immutable set search_path='' as $$
+declare groups text[];
+begin
+  if jsonb_typeof(choices) is distinct from 'array' or jsonb_array_length(choices)>50 then raise exception 'INVALID'; end if;
+  if exists(select 1 from jsonb_array_elements(choices) x where jsonb_typeof(x)<>'string') then raise exception 'INVALID'; end if;
+  groups:=array(select distinct jsonb_array_elements_text(choices));
+  if exists(select 1 from unnest(groups) id where not exists(
+    select 1 from jsonb_array_elements(board->'groups') g where g->>'id'=id)) then raise exception 'INVALID'; end if;
+  return groups;
+end;
+$$;
+
+create or replace function toki_private.issue_company_pins(org uuid, board jsonb, batch jsonb)
+returns jsonb language plpgsql volatile set search_path='' as $$
+declare entry jsonb; name text; groups text[]; pin text; entropy bigint; inserted uuid; result jsonb:='[]';
+begin
+  if jsonb_typeof(batch) is distinct from 'array' or jsonb_array_length(batch) not between 1 and 30 then raise exception 'INVALID'; end if;
+  if (select count(*) from toki_private.company_pin_invites where company_id=org and disabled_at is null)+jsonb_array_length(batch)>100
+    then raise exception 'LIMIT'; end if;
+  for entry in select value from jsonb_array_elements(batch) loop
+    if jsonb_typeof(entry) is distinct from 'object' or entry-array['name','groups']<>'{}'
+      or jsonb_typeof(entry->'name') is distinct from 'string' then raise exception 'INVALID'; end if;
+    name:=toki_private.checked_schedule_name(entry->>'name');
+    groups:=toki_private.checked_visible_groups(board,entry->'groups');
+    perform toki_private.check_schedule_invitations(org,board,name,null);
+    inserted:=null;
+    for attempt in 1..100 loop
+      entropy:=('x'||left(gen_random_uuid()::text,8))::bit(32)::bigint;
+      if entropy>=4294000000 then continue; end if;
+      pin:=lpad((entropy%1000000)::text,6,'0');
+      insert into toki_private.company_pin_invites(company_id,pin_hash,display_name,visible_groups)
+        values(org,toki_private.company_pin_hash(org,pin),name,groups)
+        on conflict(company_id,pin_hash) do nothing returning id into inserted;
+      exit when inserted is not null;
+    end loop;
+    if inserted is null then raise exception 'LIMIT'; end if;
+    result:=result||jsonb_build_array(jsonb_build_object('name',name,'password',pin));
+  end loop;
+  return jsonb_build_object('invitations',result);
+end;
+$$;
+revoke all on function toki_private.checked_visible_groups(jsonb,jsonb),toki_private.issue_company_pins(uuid,jsonb,jsonb) from public,anon,authenticated;
 
 create or replace function toki_private.project_schedule(board jsonb, own_row uuid, allowed_groups text[])
 returns jsonb language sql immutable set search_path='' as $$
@@ -238,6 +332,7 @@ declare
   target toki_private.company_members%rowtype; invited record;
   projected jsonb; next_board jsonb; display_name text; new_row uuid; row_index integer;
   row_kind text; groups_to_show text[];
+  invitation toki_private.company_pin_invites%rowtype; applied_at timestamptz;
 begin
   if uid is null or not exists(select 1 from auth.identities i where i.user_id=uid and i.provider='google')
     or not exists(select 1 from jsonb_array_elements(coalesce(auth.jwt()->'amr','[]'::jsonb)) a where a->>'method'='oauth')
@@ -282,11 +377,38 @@ begin
   elsif p_action='create' then
     -- Company administrators are not platform operators. No public creation route.
     raise exception 'DENIED';
-  elsif p_action='join' then
+  elsif p_action in ('join','apply','accept_invite') then
     if p_code is null or btrim(p_code) !~ '^[a-fA-F0-9]{32}$' then raise exception 'COMPANY'; end if;
     select * into c from toki_private.companies where code=upper(btrim(p_code)) for update;
     if c.id is null then raise exception 'COMPANY'; end if;
+    if p_action='join' and c.invitation_v2 then raise exception 'UPDATE_REQUIRED'; end if;
+    if p_action='apply' then display_name:=toki_private.checked_schedule_name(p_name); end if;
     perform 1 from auth.users where id=uid for update;
+    select * into m from toki_private.company_members where company_id=c.id and user_id=uid;
+    if p_action='accept_invite' then
+      if not c.scoped_schedule then raise exception 'UPDATE_REQUIRED'; end if;
+      if m.status='blocked' then raise exception 'DENIED'; end if;
+      if m.status='active' then return jsonb_build_object('id',c.id); end if;
+      if jsonb_typeof(p_payload) is distinct from 'string' or (p_payload#>>'{}') !~ '^[0-9]{6}$' then raise exception 'INVITE_INVALID'; end if;
+      select * into invitation from toki_private.company_pin_invites
+        where company_id=c.id and pin_hash=toki_private.company_pin_hash(c.id,p_payload#>>'{}') and disabled_at is null;
+      if invitation.id is null then raise exception 'INVITE_INVALID'; end if;
+      if (select count(*) from toki_private.company_members where company_id=c.id and status='active')>=500 then raise exception 'LIMIT'; end if;
+      select * into b from public.toki_boards where id=c.board_id for update;
+      next_board:=toki_private.with_schedule_rows(b.payload);
+      update toki_private.company_pin_invites set disabled_at=now(),display_name=null,visible_groups='{}' where id=invitation.id;
+      perform toki_private.check_schedule_invitations(c.id,next_board,invitation.display_name,mail);
+      groups_to_show:=array(select id from unnest(invitation.visible_groups) id where exists(
+        select 1 from jsonb_array_elements(next_board->'groups') g where g->>'id'=id));
+      new_row:=gen_random_uuid();
+      update public.toki_boards set payload=toki_private.append_schedule_row(next_board,new_row,invitation.display_name,'person') where id=b.id;
+      insert into toki_private.company_members(company_id,user_id,role,status,person_id,visible_groups)
+        values(c.id,uid,'member','active',new_row,groups_to_show)
+        on conflict(company_id,user_id) do update
+          set role='member',status='active',person_id=excluded.person_id,visible_groups=excluded.visible_groups,request_name=null;
+      delete from toki_private.company_invites where company_id=c.id and email=mail;
+      return jsonb_build_object('id',c.id);
+    end if;
     delete from toki_private.company_members where company_id=c.id and status='pending' and created_at<=now()-interval '7 days';
     if exists(select 1 from toki_private.company_members where company_id=c.id and user_id=uid) then return jsonb_build_object('id',c.id); end if;
     -- list claims verified-email invitations; they bypass application saturation.
@@ -295,7 +417,13 @@ begin
       and not exists(select 1 from toki_private.company_members where company_id=c.id and user_id=uid) then raise exception 'LIMIT'; end if;
     if (select count(*) from toki_private.company_members where company_id=c.id and status='pending')>=50 then raise exception 'JOIN_LIMIT'; end if;
     if (select count(*) from toki_private.company_members where company_id=c.id and status='active')>=500 then raise exception 'LIMIT'; end if;
-    insert into toki_private.company_members(company_id,user_id) values(c.id,uid) on conflict do nothing;
+    insert into toki_private.company_members(company_id,user_id,request_name)
+      values(c.id,uid,display_name) returning created_at into applied_at;
+    if p_action='apply' then
+      insert into toki_private.company_application_mail(company_id,requester,administrator,requested_at)
+        select c.id,uid,cm.user_id,applied_at
+        from toki_private.company_members cm where cm.company_id=c.id and cm.role='admin' and cm.status='active';
+    end if;
     return jsonb_build_object('id',c.id);
   end if;
   -- One company lock serializes membership revocation with board writes and admin changes.
@@ -304,7 +432,7 @@ begin
   select * into c from toki_private.companies where id=p_company for update;
   select * into m from toki_private.company_members where company_id=p_company and user_id=uid;
   if c.id is null or m.status is distinct from 'active' then raise exception 'DENIED'; end if;
-  if c.scoped_schedule and p_action in ('read','save','invite','approve','assign_person','set_group_access','remove_row','add_place','detach_place') then
+  if c.scoped_schedule and p_action in ('read','save','invite','invite_batch','approve','assign_person','set_group_access','remove_row','add_place','detach_place') then
     select * into b from public.toki_boards where id=c.board_id for update;
     if not (b.payload ? 'rows') then
       update public.toki_boards set payload=toki_private.with_schedule_rows(b.payload) where id=b.id returning * into b;
@@ -335,6 +463,11 @@ begin
           select id from unnest(cm.visible_groups) id
           where exists(select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id))
           where cm.company_id=c.id and exists(select 1 from unnest(cm.visible_groups) id
+            where not exists(select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id));
+        update toki_private.company_pin_invites i set visible_groups=array(
+          select id from unnest(i.visible_groups) id
+          where exists(select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id))
+          where i.company_id=c.id and i.disabled_at is null and exists(select 1 from unnest(i.visible_groups) id
             where not exists(select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id));
       end if;
     end if;
@@ -410,16 +543,20 @@ begin
     select payload into next_board from public.toki_boards where id=c.board_id;
     select coalesce(jsonb_agg(jsonb_build_object('id',cm.user_id,'email',u.email,'name',
       coalesce(next_board->'people'->>toki_private.schedule_row_index(next_board,cm.person_id),left(coalesce(u.raw_user_meta_data->>'full_name',u.email),80)),
-      'role',cm.role,'status',cm.status) || case when c.scoped_schedule
+      'role',cm.role,'status',cm.status) || case when cm.request_name is not null
+        then jsonb_build_object('requestName',cm.request_name) else '{}' end || case when c.scoped_schedule
         then jsonb_build_object('personId',cm.person_id,'groupIds',cm.visible_groups) else '{}' end
       order by cm.created_at),'[]') into result
       from toki_private.company_members cm join auth.users u on u.id=cm.user_id where cm.company_id=c.id;
     return jsonb_build_object('members',result,'invites',coalesce((select jsonb_agg(jsonb_build_object('email',email,'role',role,'expiresAt',expires_at)
       || case when c.scoped_schedule then jsonb_build_object('displayName',i.display_name) else '{}' end
-      ) from toki_private.company_invites i where i.company_id=c.id),'[]'))
+      ) from toki_private.company_invites i where i.company_id=c.id),'[]'),
+      'pinInvites',coalesce((select jsonb_agg(jsonb_build_object('id',i.id,'name',i.display_name,'groupIds',i.visible_groups)
+        order by i.created_at,i.id) from toki_private.company_pin_invites i where i.company_id=c.id and i.disabled_at is null),'[]'))
       || case when c.scoped_schedule then jsonb_build_object('groups',coalesce((select jsonb_agg(g - 'members' order by n)
         from jsonb_array_elements(next_board->'groups') with ordinality as entry(g,n)),'[]')) else '{}' end;
   elsif p_action='invite' then
+    if c.invitation_v2 then raise exception 'UPDATE_REQUIRED'; end if;
     if p_email is null or length(p_email)>254 or p_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' then raise exception 'INVALID'; end if;
     if (select count(*) from toki_private.company_invites where company_id=c.id)>=100
       and not exists(select 1 from toki_private.company_invites where company_id=c.id and email=lower(btrim(p_email))) then raise exception 'LIMIT'; end if;
@@ -435,6 +572,13 @@ begin
       on conflict(company_id,email) do update set role='member',expires_at=now()+interval '7 days',display_name=excluded.display_name;
   elsif p_action='cancel_invite' then
     delete from toki_private.company_invites where company_id=c.id and email=lower(btrim(p_email));
+  elsif p_action='invite_batch' then
+    if not c.scoped_schedule then raise exception 'UPDATE_REQUIRED'; end if;
+    return toki_private.issue_company_pins(c.id,b.payload,p_payload);
+  elsif p_action='cancel_pin_invite' then
+    update toki_private.company_pin_invites set disabled_at=now(),display_name=null,visible_groups='{}'
+      where company_id=c.id and id=p_member and disabled_at is null;
+    if not found then raise exception 'INVALID'; end if;
   elsif p_action='remove_member' then
     select * into target from toki_private.company_members where company_id=c.id and user_id=p_member;
     if target.user_id is null or target.user_id=uid then raise exception 'INVALID'; end if;
@@ -466,19 +610,20 @@ begin
       if not c.scoped_schedule or target.person_id is not null or
         (p_action='assign_person' and target.status<>'active') then raise exception 'INVALID'; end if;
       display_name:=toki_private.checked_schedule_name(p_name);
+      if p_payload is not null and (p_action<>'approve' or target.status<>'pending') then raise exception 'INVALID'; end if;
+      groups_to_show:=case when p_payload is null then target.visible_groups else toki_private.checked_visible_groups(b.payload,p_payload) end;
       select lower(email) into mail from auth.users where id=target.user_id;
       perform toki_private.check_schedule_invitations(c.id,b.payload,display_name,mail);
       new_row:=gen_random_uuid();
       update public.toki_boards set payload=toki_private.append_schedule_row(b.payload,new_row,display_name,'person') where id=b.id;
-      update toki_private.company_members set status='active',person_id=new_row where company_id=c.id and user_id=p_member;
+      update toki_private.company_members set status='active',person_id=new_row,visible_groups=groups_to_show,request_name=null
+        where company_id=c.id and user_id=p_member;
       delete from toki_private.company_invites where company_id=c.id and email=mail;
     elsif p_action='set_group_access' then
       if not c.scoped_schedule or target.status<>'active' or target.role<>'member'
         or p_payload is null or jsonb_typeof(p_payload) is distinct from 'array'
         or jsonb_array_length(p_payload)>50 then raise exception 'INVALID'; end if;
-      groups_to_show:=array(select distinct jsonb_array_elements_text(p_payload));
-      if exists(select 1 from unnest(groups_to_show) id where not exists(
-        select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id)) then raise exception 'INVALID'; end if;
+      groups_to_show:=toki_private.checked_visible_groups(b.payload,p_payload);
       update toki_private.company_members set visible_groups=groups_to_show where company_id=c.id and user_id=p_member;
       update public.toki_boards set payload=payload where id=c.board_id;
     elsif p_action='role' then
@@ -486,7 +631,7 @@ begin
       update toki_private.company_members set role=p_role where company_id=c.id and user_id=p_member;
       if c.scoped_schedule then update public.toki_boards set payload=payload where id=c.board_id; end if;
     else
-      update toki_private.company_members set status=case when p_action='approve' then 'active' else 'blocked' end where company_id=c.id and user_id=p_member;
+      update toki_private.company_members set status=case when p_action='approve' then 'active' else 'blocked' end,request_name=null where company_id=c.id and user_id=p_member;
       if p_action='block' then delete from toki_private.company_invites where company_id=c.id and email=(select lower(email) from auth.users where id=p_member); end if;
     end if;
   else raise exception 'INVALID'; end if;
@@ -540,7 +685,7 @@ begin
     perform set_config('response.status','401',true);
     return jsonb_build_object('message','AUTH','code','TOKI_AUTH');
   end if;
-  bucket_name:=case when p_action in ('read','list') then 'read' when p_action in ('save','add_place','remove_row','detach_place') then 'write' when p_action in ('join','create') then 'join' else 'admin' end;
+  bucket_name:=case when p_action in ('read','list') then 'read' when p_action in ('save','add_place','remove_row','detach_place') then 'write' when p_action in ('join','apply','accept_invite','create') then 'join' else 'admin' end;
   maximum:=case bucket_name when 'read' then 120 when 'write' then 60 when 'join' then 5 else 30 end;
   insert into toki_private.request_limits as r(user_id,bucket,started_at,attempts) values(uid,bucket_name,clock_timestamp(),1)
     on conflict(user_id,bucket) do update set
@@ -554,9 +699,15 @@ begin
   end if;
   -- Count new public applications outside the action's rollback boundary.
   -- The company lock also prevents simultaneous claims exceeding capacity.
-  if p_action='join' and length(p_code)<=64 and btrim(p_code) ~ '^[a-fA-F0-9]{32}$' then
+  if p_action in ('join','apply','accept_invite') and length(p_code)<=64 and btrim(p_code) ~ '^[a-fA-F0-9]{32}$' then
     select id into joining from toki_private.companies where code=upper(btrim(p_code)) for update;
-    if joining is not null
+    if p_action='accept_invite' then
+      if exists(select 1 from toki_private.company_pin_failures where company_id=joining and started_at>clock_timestamp()-interval '1 day' and failures>=20) then
+        perform set_config('response.status','429',true);
+        perform set_config('response.headers','[{"Cache-Control":"no-store"}]',true);
+        return jsonb_build_object('message','INVITE_LIMIT','code','TOKI_INVITE_LIMIT');
+      end if;
+    elsif joining is not null
       and not exists(select 1 from toki_private.company_members where company_id=joining and user_id=uid and (status<>'pending' or created_at>now()-interval '7 days'))
       and not exists(select 1 from toki_private.company_invites where company_id=joining and email=(select lower(email) from auth.users where id=uid) and expires_at>now()) then
       insert into toki_private.company_join_limits as r(company_id,window_started_at,window_attempts,day_started_at,day_attempts)
@@ -576,13 +727,20 @@ begin
   end if;
   -- Subtransaction rolls back failed mutations without losing the attempt count.
   begin
-    if p_action is null or p_action not in ('read','save','list','join','create','members','invite','cancel_invite','approve','block','role','transfer_admin','remove_member','assign_person','set_group_access','add_place','remove_row','detach_place')
+    if p_action is null or p_action not in ('read','save','list','join','apply','accept_invite','create','members','invite','invite_batch','cancel_invite','cancel_pin_invite','approve','block','role','transfer_admin','remove_member','assign_person','set_group_access','add_place','remove_row','detach_place')
       or length(p_code)>64 or length(p_name)>80 or length(p_email)>254 or length(p_role)>10
-      or (p_payload is not null and (p_action not in ('save','set_group_access','add_place','detach_place') or octet_length(p_payload::text)>2097152)) then raise exception 'INVALID'; end if;
+      or (p_payload is not null and (p_action not in ('save','set_group_access','add_place','detach_place','invite_batch','accept_invite','approve')
+        or octet_length(p_payload::text)>case when p_action='save' then 2097152 else 65536 end)) then raise exception 'INVALID'; end if;
     result:=toki_private.company_action(p_action,p_company,p_code,p_name,p_member,p_email,p_role,p_payload,p_version);
   exception when others then
     failure:=case when SQLERRM in ('AUTH','DENIED','COMPANY','CONFLICT','LAST_ADMIN','LIMIT','JOIN_LIMIT','REQUEST_EXPIRED',
-      'MEMBER_NOT_STOPPED','UPDATE_REQUIRED','NAME_INVALID','NAME_TAKEN','MEMBER_EXISTS','SCHEDULE_BUSY') then SQLERRM else 'INVALID' end;
+      'MEMBER_NOT_STOPPED','UPDATE_REQUIRED','NAME_INVALID','NAME_TAKEN','MEMBER_EXISTS','SCHEDULE_BUSY','INVITE_INVALID') then SQLERRM else 'INVALID' end;
+    if p_action='accept_invite' and failure='INVITE_INVALID' and joining is not null then
+      insert into toki_private.company_pin_failures as f values(joining,clock_timestamp(),1)
+        on conflict(company_id) do update set
+          failures=case when f.started_at<=clock_timestamp()-interval '1 day' then 1 else least(f.failures+1,20) end,
+          started_at=case when f.started_at<=clock_timestamp()-interval '1 day' then clock_timestamp() else f.started_at end;
+    end if;
     if p_action='save' and failure in ('NAME_INVALID','NAME_TAKEN') then failure:='INVALID'; end if;
     perform set_config('response.status',case failure when 'AUTH' then '401' when 'DENIED' then '403' when 'CONFLICT' then '409' else '400' end,true);
     result:=jsonb_build_object('message',failure,'code','TOKI_'||failure);
