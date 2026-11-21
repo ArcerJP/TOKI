@@ -248,8 +248,9 @@
   ["close-roster","cancel-roster"].forEach(id=>$(id).onclick=()=>{if(!busy)$("roster-dialog").close();});
   $("roster-form").onsubmit=async e=>{e.preventDefault();if(!editable())return;
     try{const selected=[...$("membership-options").querySelectorAll("input:checked")].map(i=>i.value);
-      const next=rosterKind==='group'?M.setGroup(snapshot(),rosterId??crypto.randomUUID(),$("roster-name").value,selected.map(Number)):M.setPerson(snapshot(),rosterId,$("roster-name").value,selected);
-      if(await commit(next,rosterId===null?"追加しました":"更新しました"))$("roster-dialog").close();
+      const createdGroupId=rosterKind==='group'&&rosterId===null?crypto.randomUUID():null;
+      const next=rosterKind==='group'?M.setGroup(snapshot(),createdGroupId??rosterId,$("roster-name").value,selected.map(Number)):M.setPerson(snapshot(),rosterId,$("roster-name").value,selected);
+      if(await commit(next,rosterId===null?"追加しました":"更新しました")){if(createdGroupId)groupView.show(createdGroupId);$("roster-dialog").close();}
     }catch(error){$("roster-error").textContent=error.message;}
   };
   $("remove-row").onclick=()=>{const group=rosterKind==='group',name=group?groups.find(g=>g.id===rosterId).name:people[rosterId],count=events.filter(e=>group?e.group===rosterId:e.person===rosterId).length;

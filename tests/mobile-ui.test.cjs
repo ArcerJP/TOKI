@@ -60,6 +60,53 @@ test('company changes start with their own empty selection; returning restores o
   await e.switchScope('u:company-b');assert.equal(e.$('group-view-dialog').open,false);assert.equal(e.$('mobile-app').textContent.includes('局A'),false);
 });
 
+for(const width of [1440,390])for(const shared of [false,true])test(`created groups become visible and preserve other choices (${width}px, ${shared?'shared':'local'})`,async t=>{
+  const e=await environment(t,{width,shared,preselect:false});
+  e.$('group-view-choices').querySelector('[data-group="b"]').click();await e.click('適用');
+  if(width<768){await e.click('メンバー');await e.click('＋ グループ');}else e.$('add-group').click();
+  e.$('roster-name').value='作成したグループ';e.$('membership-options').querySelector('input[value="0"]').checked=true;
+  await e.$('roster-form').onsubmit({preventDefault(){}});await flush();
+  const created=e.current().groups.find(g=>g.name==='作成したグループ');assert.ok(created);assert.equal(e.$('roster-dialog').open,false);
+  const preferenceKey=`toki-view-v1:${shared?'shared':'local'}:groups`;
+  assert.deepEqual(JSON.parse(e.w.localStorage.getItem(preferenceKey)).selected.sort(),['b',created.id].sort());
+  if(width<768)await e.click('予定');
+  const visibleNames=()=>[...(width<768?e.$('mobile-app').querySelectorAll('h2'):e.$('chart').querySelectorAll('.group-row .row-name'))].map(n=>n.textContent);
+  assert.deepEqual(visibleNames(),['局B','作成したグループ']);
+  if(shared){
+    await e.switchScope('u:other-organization');assert.equal(e.$('group-view-dialog').querySelectorAll('input:checked').length,0);
+    await e.switchScope('shared');assert.deepEqual(visibleNames(),['局B','作成したグループ']);
+  }
+  await e.resize(width<768?1440:390);
+  assert.deepEqual([...(width<768?e.$('chart').querySelectorAll('.group-row .row-name'):e.$('mobile-app').querySelectorAll('h2'))].map(n=>n.textContent),['局B','作成したグループ']);
+});
+
+test('creating after dismissing the first filter prompt persists the new group without selecting existing groups',async t=>{
+  const e=await environment(t,{width:1440,preselect:false});e.$('group-view-close').click();
+  e.$('add-group').click();e.$('roster-name').value='最初のグループ';await e.$('roster-form').onsubmit({preventDefault(){}});
+  const created=e.current().groups.find(g=>g.name==='最初のグループ');assert.ok(created);
+  assert.deepEqual(JSON.parse(e.w.localStorage.getItem('toki-view-v1:local:groups')).selected,[created.id]);
+  assert.equal(e.$('group-view-dialog').open,false);assert.equal(e.$('chart').querySelectorAll('.group-row').length,1);
+});
+
+test('failed group creation and editing a hidden group do not change display choices',async t=>{
+  const e=await environment(t,{shared:true,preselect:false});await e.click('適用');
+  const key='toki-view-v1:shared:groups',before=e.w.localStorage.getItem(key);
+  await e.click('メンバー');await e.click('局Aの設定を編集');e.$('roster-name').value='編集後の局A';
+  await e.$('roster-form').onsubmit({preventDefault(){}});assert.equal(e.w.localStorage.getItem(key),before);
+  await e.click('＋ グループ');e.$('roster-name').value='保存失敗グループ';e.fail();
+  await e.$('roster-form').onsubmit({preventDefault(){}});assert.equal(e.$('roster-dialog').open,true);assert.match(e.$('roster-error').textContent,/保存失敗/);
+  assert.equal(e.current().groups.some(g=>g.name==='保存失敗グループ'),false);assert.equal(e.w.localStorage.getItem(key),before);
+  e.$('cancel-roster').click();await e.click('予定');assert.equal(e.$('mobile-app').querySelectorAll('h2').length,0);
+});
+
+test('groups received from another device remain hidden until explicitly selected',async t=>{
+  const e=await environment(t,{shared:true});
+  const key='toki-view-v1:shared:groups',before=e.w.localStorage.getItem(key);
+  e.current().groups.push({id:'remote-group',name:'別端末のグループ',members:[0]});await e.remoteUpdate();
+  assert.equal(e.w.localStorage.getItem(key),before);assert.equal([...e.$('mobile-app').querySelectorAll('h2')].some(n=>n.textContent==='別端末のグループ'),false);
+  await e.click('表示グループを選択');assert.equal(e.$('group-view-choices').querySelector('[data-group="remote-group"]').checked,false);
+});
+
 test('logout closes editors and removes company data from hidden DOM and exported text',async t=>{
   const e=await environment(t,{shared:true});await e.click('局Aの時間を編集');await e.click('終了を30分遅らせる');
   e.$('export-result').value='Private schedule';e.$('print-area').textContent='Private schedule';
