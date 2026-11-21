@@ -72,9 +72,21 @@ begin
     or jsonb_typeof(new.payload->'meetings') is distinct from 'array' then
     raise exception 'Invalid schedule structure';
   end if;
-  if (new.payload - array['schemaVersion','people','groups','events','meetings']) <> '{}'::jsonb then raise exception 'INVALID'; end if;
+  if (new.payload - array['schemaVersion','people','groups','events','meetings','rows']) <> '{}'::jsonb then raise exception 'INVALID'; end if;
   if jsonb_array_length(new.payload->'people') not between 0 and 100 or jsonb_array_length(new.payload->'groups') > 50 or jsonb_array_length(new.payload->'events') > 2000 or jsonb_array_length(new.payload->'meetings') > 2000 then
     raise exception 'Invalid schedule size';
+  end if;
+  if new.payload ? 'rows' then
+    if jsonb_typeof(new.payload->'rows') is distinct from 'array' then raise exception 'INVALID'; end if;
+    if jsonb_array_length(new.payload->'rows') <> jsonb_array_length(new.payload->'people')
+      or exists(select 1 from jsonb_array_elements(new.payload->'rows') r
+        where jsonb_typeof(r) is distinct from 'object'
+          or coalesce(r->>'id','') !~ '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
+          or coalesce(r->>'kind','') not in ('person','place')
+          or r - array['id','kind'] <> '{}'::jsonb)
+      or (select count(*)<>count(distinct r->>'id') from jsonb_array_elements(new.payload->'rows') r)
+      then raise exception 'INVALID';
+    end if;
   end if;
   for person_name in select value from jsonb_array_elements(new.payload->'people') loop
     if jsonb_typeof(person_name) <> 'string' or toki_private.js_length(person_name#>>'{}') not between 1 and 40 then

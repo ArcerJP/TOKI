@@ -124,8 +124,10 @@
         </div>
       </section>
       <div class="roster-toolbar">
-        <button id="add-person">＋ 人を追加</button
-        ><button id="add-group">＋ グループを追加</button
+        <span class="place-add-control"><button id="add-person">＋ 人を追加</button><span id="place-help" class="place-help" hidden>
+          <button type="button" aria-label="場所・外部予定の説明" aria-expanded="false" aria-controls="place-help-text">ⓘ</button>
+          <span id="place-help-text" class="place-help-text">教室・施設・打ち合わせ先の空き時間を登録できます。グループに加えると共通の空き時間に含まれ、MTG登録時にその時間を確保します。</span>
+        </span></span><button id="add-group">＋ グループを追加</button
         ><button
           id="google-import-button"
           aria-haspopup="dialog"
@@ -403,6 +405,7 @@
           ><button type="button" id="cancel-remove">戻る</button>
         </div>
         <div class="dialog-actions">
+          <button type="button" id="detach-place" hidden>このグループから外す</button>
           <button type="button" id="remove-row" class="danger" hidden>
             削除</button
           ><span></span
@@ -441,7 +444,9 @@
         <p class="import-help">管理者は複数人に設定できます。最後の管理者は、一般メンバーへの変更・アクセス停止ができません。管理を引き継ぐ場合は、先に相手を管理者に変更してください。</p>
         <div id="company-members"></div><h3>メールアドレスで招待</h3>
         <p class="import-help">登録したGoogleアカウントでログインすると参加できます。有効期間は7日間。メールは自動送信されません。組織URLを別途伝えてください。</p>
-        <div class="company-form"><label for="company-invite-email">招待先のGoogleメールアドレス</label><input id="company-invite-email" type="email" autocomplete="off" /><button id="company-invite-button">招待を登録</button></div><div id="company-invites"></div>
+        <div class="company-form"><label for="company-invite-email">招待先のGoogleメールアドレス</label><input id="company-invite-email" type="email" autocomplete="off" />
+          <label id="company-invite-name-label" for="company-invite-name" hidden>予定表の表示名</label><input id="company-invite-name" maxlength="40" autocomplete="off" hidden />
+          <button id="company-invite-button">招待を登録</button></div><div id="company-invites"></div>
       </fieldset></section>
     </dialog>
     <dialog id="google-import-dialog" aria-labelledby="google-import-title">

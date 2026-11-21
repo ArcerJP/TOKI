@@ -65,7 +65,7 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
   dialog.addEventListener('cancel',event=>{if(dialog.getAttribute('aria-busy')==='true')event.preventDefault();});
   dialog.addEventListener('close',()=>{target=null;cancel();suppressClick=false;settled();});
   $('delete-meeting').onclick=async()=>{
-    if(!target||!canDelete())return;
+    if(!target||!canDelete(target))return;
     dialog.setAttribute('aria-busy','true');refresh();
     try{if(await (target.kind==='availability'?removeAvailability(target):release(target)))dialog.close();else $('meeting-menu-error').textContent='削除を保存できませんでした。閉じて最新の予定を確認してください。';}
     catch(error){$('meeting-menu-error').textContent=error.message;}
@@ -79,6 +79,6 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
     try{await navigator.clipboard.writeText(text);dialog.close();notify(availability?'可能時間をコピーしました':'MTGの時間をコピーしました');}
     catch{const fallback=$('meeting-copy-fallback');fallback.hidden=false;fallback.value=text;fallback.focus();fallback.select();$('meeting-menu-error').textContent='自動コピーできません。選択されたテキストをコピーしてください。';}
   };
-  function refresh(){const saving=dialog.getAttribute('aria-busy')==='true';$('delete-meeting').disabled=saving||!canDelete();$('copy-meeting-time').disabled=saving;$('close-meeting-menu').disabled=saving;}
+  function refresh(){const saving=dialog.getAttribute('aria-busy')==='true';$('delete-meeting').disabled=saving||!target||!canDelete(target);$('copy-meeting-time').disabled=saving;$('close-meeting-menu').disabled=saving;}
   return {get pressing(){return Boolean(press);},refresh};
 };

@@ -1,5 +1,5 @@
 "use strict";
-window.TokiGoogleImportUI=({context,apply,selected,canOpen})=>{
+window.TokiGoogleImportUI=({context,apply,selected,canOpen,canImportPerson=()=>true})=>{
   const $=id=>document.getElementById(id),api=window.TokiGoogleCalendar,model=window.TokiCalendarImport;
   const dialog=$('google-import-dialog'),inputs=['google-import-person','google-time-min','google-time-max'];
   let loading=false,sdkReady=false,preview=null,base=null,operation=0,request=null;
@@ -46,7 +46,10 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen})=>{
     if(!canOpen())return;
     base=context();if(base.pending)return;
     $('google-import-person').replaceChildren();
-    base.board.people.forEach((name,index)=>{const option=document.createElement('option');option.value=index;option.textContent=name;$('google-import-person').append(option);});
+    base.board.people.forEach((name,index)=>{
+      if(!canImportPerson(index))return;
+      const option=document.createElement('option');option.value=index;option.textContent=name;$('google-import-person').append(option);
+    });
     const week=window.TokiModel.weekDates(selected()),end=window.TokiModel.shiftDate(week[6],1);
     $('google-time-min').value=week[0]+'T00:00';$('google-time-max').value=end?end+'T00:00':week[6]+'T23:59';
     error('');invalidate();resetCalendars();controls();dialog.showModal();
@@ -93,6 +96,7 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen})=>{
     error('');invalidate();const sequence=++operation;
     try{
       current();const range=model.period($('google-time-min').value,$('google-time-max').value),person=Number($('google-import-person').value);
+      if(!$('google-import-person').value||!canImportPerson(person))throw Error('取り込み先の人を確認してください。');
       if(!listReady||!chosen.size)throw Error('取り込むカレンダーを1つ以上選択してください。');
       const calendarIds=calendars.filter(c=>chosen.has(c.id)).map(c=>c.id);
       loading=true;controls();$('google-login-status').textContent='予定ありの時間帯を取得中…';request=new AbortController();
@@ -104,7 +108,7 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen})=>{
   $('google-apply-button').onclick=async()=>{
     if(!preview||loading)return;error('');
     try{
-      current();loading=true;controls();
+      current();if(!canImportPerson(preview.plan.person))throw Error('取り込み先の人を確認してください。');loading=true;controls();
       if(await apply(preview.plan,preview.fingerprint))dialog.close();
       else {invalidate();error('保存できませんでした。画面を閉じて最新の予定を確認し、再度取り込んでください。');}
     }catch(failure){invalidate();error(failure.message);}

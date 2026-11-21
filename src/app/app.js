@@ -6,7 +6,7 @@
   const shared=window.TokiShared;
   const M=window.TokiModel,A=window.TokiAvailability,S=window.TokiSchedule;
   let rowDrag=null,googleImportUI=null,meetingMenu=null,pendingLocalBoard=null,mobile=null,groupView=null,companyUI=null;
-  let groups=[],ready=!shared.enabled,busy=false,revision=null,pendingBoard=null,lastSaveError='',accountGeneration=0;
+  let groups=[],rowMetadata=null,access=null,ready=!shared.enabled,busy=false,revision=null,pendingBoard=null,lastSaveError='',accountGeneration=0;
   let initializing=shared.enabled;
   $("schedule-app").hidden=shared.enabled;
   $("auth-gate").hidden=true;
@@ -21,8 +21,20 @@
   const clone=o=>JSON.parse(JSON.stringify(o));
   const el=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;};
   let events=[],meetings=[],displayBars=new Map();
-  const snapshot=()=>M.clone({schemaVersion:4,people,groups,events,meetings});
-  const assign=value=>{const board=S.migrate(value);people=M.clone(board.people);groups=M.clone(board.groups);events=M.clone(board.events);meetings=M.clone(board.meetings);};
+  const snapshot=()=>M.clone({schemaVersion:4,people,groups,events,meetings,...(rowMetadata&&{rows:rowMetadata})});
+  const assign=value=>{
+    const board=S.migrate(value);
+    ({people,groups,events,meetings}=board);
+    rowMetadata=board.rows??null;
+  };
+  const canManage=()=>!access||access.role==='admin';
+  const isPlace=person=>rowMetadata?.[person]?.kind==='place';
+  const ownPerson=()=>access?.role==='member'&&access.personId
+    ?rowMetadata.findIndex(row=>row.id===access.personId):-1;
+  const canEditPerson=person=>canManage()||person===ownPerson()||isPlace(person);
+  const canEditRow=key=>key.startsWith('g:')?canManage():canEditPerson(Number(key.slice(2)));
+  const canAddPlace=()=>!access||canManage()||groups.length>0;
+  const canImport=()=>people.some((_,person)=>!isPlace(person)&&canEditPerson(person));
   const dialogOpen=()=>Boolean(document.querySelector("dialog[open]"));
   const viewScope=()=>shared.enabled?(shared.scope||'shared'):'local';
   const prefKey=name=>`toki-view-v1:${viewScope()}:${name}`;
@@ -47,14 +59,19 @@
     $("schedule-app").setAttribute('aria-busy',String(value));
     $("schedule-app").classList.toggle('read-only',shared.enabled&&!shared.online);
     $("roster-form").querySelectorAll("button").forEach(b=>b.disabled=value);
-    for(const id of ['add-person','add-group','remove-row','confirm-remove'])$(id).disabled=disabled;
+    for(const id of ['add-person','add-group','remove-row','confirm-remove','detach-place'])$(id).disabled=disabled;
+    $('add-person').textContent=access?'＋ 場所・外部予定を追加':'＋ 人を追加';
+    $('add-person').disabled=disabled||!canAddPlace();
+    $('place-help').hidden=!access;
+    $('add-group').hidden=!canManage();
     $("roster-form").querySelector('button[type="submit"]').disabled=disabled;
     $("meeting-dialog").querySelectorAll('.release-member').forEach(button=>button.disabled=disabled);
     $("export-availability").disabled=!ready||(!people.length&&!groups.length);
     $("export-meetings").disabled=!ready||!groups.length;
-    $("google-import-button").disabled=disabled||!people.length||navigator.onLine===false;
+    $("google-import-button").disabled=disabled||!canImport()||navigator.onLine===false;
     $("undo").disabled=disabled||!undo.length;$("redo").disabled=disabled||!redo.length;
-    $("chart").querySelectorAll('.row-drag-handle,.bottom-add').forEach(button=>button.disabled=disabled);
+    $("chart").querySelectorAll('.row-drag-handle').forEach(button=>button.disabled=disabled);
+    $("chart").querySelectorAll('.bottom-add').forEach(button=>button.disabled=disabled||!canAddPlace());
     if(ready&&shared.enabled&&!shared.online&&!busy)$("save-status").textContent='オフライン・閲覧のみ';
     googleImportUI?.refresh();
     meetingMenu?.refresh();
@@ -78,7 +95,7 @@
       assign(next);return true;
     }
     const generation=accountGeneration;setBusy(true);$("save-status").textContent="共有先に保存中…";
-    try{const saved=await shared.save(next,revision);if(generation!==accountGeneration)return false;assign(saved.payload);revision=saved.version;$("save-status").textContent="共有保存済み";return true;}
+    try{const saved=await shared.save(next,revision);if(generation!==accountGeneration)return false;assign(saved.payload);access=saved.access??null;revision=saved.version;$("save-status").textContent="共有保存済み";return true;}
     catch(error){if(generation!==accountGeneration)return false;lastSaveError=error.message;$("save-status").textContent="未保存・最新の予定を確認してください";$("meeting-error").textContent=error.message;$("roster-error").textContent=error.message;toast(error.message);await shared.refresh();return false;}
     finally{if(generation===accountGeneration)setBusy(false);}
   }
@@ -88,9 +105,16 @@
     if(board.version<=revision)return;
     const payload=board.payload;
     if(!M.valid(payload)){$("auth-message").textContent="共有データの形式を確認できません。再読み込みしてください。";$("auth-retry").hidden=false;return;}
-    if(busy||drag||meetingMenu?.pressing||rowDrag?.active||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
-    const changed=revision!==null;assign(payload);revision=board.version;undo=[];redo=[];ready=true;
-    if(!changed){try{excludedGroups=JSON.parse(localStorage.getItem(prefKey('excluded'))||'{}');collapsed=new Set(JSON.parse(localStorage.getItem(prefKey('collapsed'))||'[]'));}catch{excludedGroups={};collapsed=new Set();}}
+    const changed=revision!==null;
+    const nextAccess=board.access??null;
+    const revoked=changed&&nextAccess?.role==='member'&&
+      (access?.role!=='member'||access.personId!==nextAccess.personId||
+        groups.some(group=>!payload.groups.some(next=>next.id===group.id))||
+        rowMetadata?.some(row=>!payload.rows.some(next=>next.id===row.id)));
+    if(revoked)resetView();
+    else if(busy||drag||meetingMenu?.pressing||rowDrag?.active||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
+    assign(payload);access=nextAccess;revision=board.version;undo=[];redo=[];ready=true;
+    if(!changed||revoked){try{excludedGroups=JSON.parse(localStorage.getItem(prefKey('excluded'))||'{}');collapsed=new Set(JSON.parse(localStorage.getItem(prefKey('collapsed'))||'[]'));}catch{excludedGroups={};collapsed=new Set();}}
     $("app-loading").hidden=true;$("auth-gate").hidden=true;$("schedule-app").hidden=false;$("save-status").textContent="共有保存済み";render();if(changed)toast("他のメンバーの変更を反映しました");
   }
   function applyPending(){
@@ -103,6 +127,8 @@
   function selectDate(date){if(!M.validDate(date)||drag||rowDrag?.active||dialogOpen())return;selected=date;try{localStorage.setItem(VIEW_KEY,date);}catch{}render();}
   function chartFor(date,interactive=true){
     const board=snapshot(),chart=el('div','chart'),rows=M.rows(board,interactive?collapsed:new Set()).filter(row=>!interactive||!groupView||groupView.visible(row.group?.id||row.context||'@unassigned'));
+    const own=ownPerson();
+    if(interactive&&own>=0&&!rows.some(row=>row.person===own))rows.unshift({key:'p:'+own,name:people[own],person:own,context:null});
     if(interactive)displayBars=new Map();
     chart.style.setProperty('--people-count',rows.length||1);
     const head=el('div','chart-header'),day=el('div','date-row'),times=el('div','time-row');
@@ -114,12 +140,14 @@
       row.style.setProperty('--person-color',group?S.color(group.id,groups):colors[Math.floor(person/4)%colors.length]);
       if(interactive){row.dataset.name=name;row.dataset.context=group?group.id:(context||'');if(group)row.dataset.group=group.id;else row.dataset.person=person;}
       const nameCell=el('div','person-name');
-      if(interactive){const handle=el('button','row-drag-handle','⋮⋮');handle.type='button';handle.setAttribute('aria-label',name+(group?'のグループを移動':'の行を移動'));handle.title='ドラッグで移動／上下キーで並べ替え';nameCell.append(handle);}
+      if(interactive&&canManage()){const handle=el('button','row-drag-handle','⋮⋮');handle.type='button';handle.setAttribute('aria-label',name+(group?'のグループを移動':'の行を移動'));handle.title='ドラッグで移動／上下キーで並べ替え';nameCell.append(handle);}
       if(group&&interactive){const toggle=el('button','group-toggle',collapsed.has(group.id)?'▸':'▾');toggle.type='button';toggle.setAttribute('aria-expanded',String(!collapsed.has(group.id)));toggle.setAttribute('aria-label',group.name+(collapsed.has(group.id)?'を展開':'を折りたたむ'));toggle.onclick=()=>{if(drag||rowDrag?.active)return;if(collapsed.has(group.id))collapsed.delete(group.id);else collapsed.add(group.id);try{localStorage.setItem(prefKey('collapsed'),JSON.stringify([...collapsed]));}catch{}render();};nameCell.append(toggle);}
       else nameCell.append(el('span','person-dot'));
-      const nameLabel=el(interactive?'button':'span','row-name',name);
-      if(interactive){nameLabel.type='button';nameLabel.title=name+'を編集・削除';nameLabel.setAttribute('aria-label',name+'を編集・削除');nameLabel.onclick=()=>openRoster(group?'group':'person',group?group.id:person);}
+      const canOpenRoster=interactive&&(canManage()||isPlace(person));
+      const nameLabel=el(canOpenRoster?'button':'span','row-name',name);
+      if(canOpenRoster){nameLabel.type='button';nameLabel.title=name+'を編集・削除';nameLabel.setAttribute('aria-label',name+'を編集・削除');nameLabel.onclick=()=>openRoster(group?'group':isPlace(person)?'place':'person',group?group.id:person,context);}
       nameCell.append(nameLabel);
+      if(isPlace(person))nameCell.append(el('span','group-size','場所'));
       if(group)nameCell.append(el('span','group-size',S.participants(board,group.id,excluded(group.id)).length+'/'+group.members.length));
       if(nested&&interactive){const toggle=el('button','member-active-toggle',inactive?'−':'✓');toggle.type='button';toggle.setAttribute('aria-pressed',String(!inactive));toggle.setAttribute('aria-label',name+(inactive?'を':'を')+groups.find(g=>g.id===context).name+(inactive?'の対象に戻す':'の対象から一時除外'));toggle.title=inactive?'この端末で対象に戻す':'この端末で一時除外（取り消し線）';toggle.onclick=()=>toggleMember(context,name);nameCell.append(toggle);}
       const track=el('div','timeline');track.dataset.row=key;
@@ -138,7 +166,7 @@
         bar.title=name+' / '+title+' '+time(event.start)+'〜'+time(event.end)+(event.kind!=='common'?' ／ 長押しで操作':'');bar.setAttribute('aria-label',name+' '+title+' '+time(event.start)+'から'+time(event.end));
         if(interactive&&event.kind!=='common'){bar.setAttribute('aria-haspopup','dialog');bar.setAttribute('aria-controls','meeting-menu');}
         if(interactive){
-          if(event.kind!=='meeting'||group)['start','end'].forEach(side=>{const handle=el('span','resize-handle '+side);handle.dataset.resize=side;handle.setAttribute('aria-hidden','true');bar.append(handle);});
+          if(canEditRow(key)&&(event.kind!=='meeting'||group))['start','end'].forEach(side=>{const handle=el('span','resize-handle '+side);handle.dataset.resize=side;handle.setAttribute('aria-hidden','true');bar.append(handle);});
           bar.addEventListener('click',e=>{if(suppressClick){e.preventDefault();return;}if(event.kind==='meeting'&&group)openMeeting(event.id);});
         }
         track.append(bar);
@@ -148,7 +176,7 @@
       row.append(nameCell,track);chart.append(row);
     });
     if(interactive&&!rows.length){const empty=el('p','group-view-empty','表示するグループがありません。「表示グループ」から選択してください。');chart.append(empty);}
-    if(interactive){const add=el('div','bottom-add-row'),button=el('button','bottom-add','＋ 人を追加');button.type='button';button.onclick=()=>openRoster('person',null);add.append(button);chart.append(add);}
+    if(interactive){const add=el('div','bottom-add-row'),button=el('button','bottom-add',access?'＋ 場所・外部予定を追加':'＋ 人を追加');button.type='button';button.onclick=()=>openRoster(access?'place':'person',null);add.append(button);chart.append(add);}
     return chart;
   }
   function render(){if(rowDrag?.active)return;document.querySelector(".member-count").textContent=`${people.length}人 · ${groups.length}グループ`;const scroll=$("chart-scroll"),x=scroll.scrollLeft,y=scroll.scrollTop;$("chart").replaceWith(Object.assign(chartFor(selected),{id:"chart"}));scroll.scrollLeft=x;scroll.scrollTop=y;renderDates();setBusy(busy);const list=events.filter(e=>e.date===selected);$("day-summary").textContent=`${new Set(list.filter(e=>e.person!==undefined).map(e=>e.person)).size}/${people.length}人 · ${list.length}枠`;groupView?.refresh();}
@@ -157,7 +185,14 @@
     $("meeting-title").textContent=(groups.find(g=>g.id===meeting.group)?.name||'グループ')+' MTG';
     $("meeting-time").textContent=label(meeting.date)+' '+time(meeting.start)+'〜'+time(meeting.end);
     $("meeting-members").replaceChildren();$("meeting-error").textContent='';
-    for(const person of meeting.members){const item=el('li'),name=el('span',null,people[person]),button=el('button','release-member','✖');button.type='button';button.disabled=!writable();button.setAttribute('aria-label',people[person]+'をMTGから外して可能時間に戻す');button.onclick=async()=>{if(!editable())return;try{if(await commit(S.release(snapshot(),id,{person}),'対象者の可能時間を戻しました')){if(meetings.some(m=>m.id===id))openMeeting(id);else $("meeting-dialog").close();}}catch(error){$("meeting-error").textContent=error.message;}};item.append(name,button);$("meeting-members").append(item);}
+    for(const person of meeting.members){const item=el('li'),name=el('span',null,people[person]);item.append(name);
+      if(canManage()){
+        const button=el('button','release-member','✖');button.type='button';button.disabled=!writable();button.setAttribute('aria-label',people[person]+'をMTGから外して可能時間に戻す');
+        button.onclick=async()=>{if(!editable()||!canManage())return;try{if(await commit(S.release(snapshot(),id,{person}),'対象者の可能時間を戻しました')){if(meetings.some(m=>m.id===id))openMeeting(id);else $("meeting-dialog").close();}}catch(error){$("meeting-error").textContent=error.message;}};
+        item.append(button);
+      }
+      $("meeting-members").append(item);
+    }
     if(!$("meeting-dialog").open)$("meeting-dialog").showModal();
   }
   $("close-meeting").onclick=()=>{if(!busy)$("meeting-dialog").close();};
@@ -171,6 +206,7 @@
   function snap(m){return Math.round(m/30)*30;}
   $("chart-scroll").addEventListener('pointerdown',e=>{
     if(e.button!==0||!editable())return;const track=e.target.closest('.timeline');if(!track)return;
+    if(!canEditRow(track.dataset.row))return;
     const bar=e.target.closest('.event'),event=bar?displayBars.get(bar.dataset.id):null,side=e.target.dataset.resize;
     if(event?.kind==='meeting'&&!event.inGroup)return;
     if(!event&&track.dataset.row.startsWith('g:')){toast('⚠️可能時間がありません');return;}
@@ -214,7 +250,10 @@
           const to=d.start<d.end?[{start:d.start,end:d.end}]:[];
           if(d.event.kind==='common')await commit(S.reserve(snapshot(),d.event.group,selected,A.subtract([d.event],to),excluded(d.event.group)),'対象メンバーのMTGを登録しました');
           else if(d.event.kind==='meeting')await commit(S.adjustMeeting(snapshot(),d.event.id,{start:d.start,end:d.end}),d.start===d.end?'MTGを削除し、対象者全員の可能時間を復元しました':'MTGの時間を変更し、対象者の可能時間に反映しました');
-          else if(d.row!==d.event.row&&to.length)await commit(S.movePersonRange(snapshot(),d.event.person,Number(d.row.slice(2)),selected,d.event,to[0]),'可能時間を移動しました');
+        else if(d.row!==d.event.row&&to.length){
+          if(!canManage())throw Error('空き時間は同じ行の中で移動してください。');
+          await commit(S.movePersonRange(snapshot(),d.event.person,Number(d.row.slice(2)),selected,d.event,to[0]),'可能時間を移動しました');
+        }
           else await commit(S.editPerson(snapshot(),d.event.person,selected,[d.event],to),to.length?'可能時間を変更しました':'可能時間を削除しました');
         }
       }else if(!d.event){const start=clamp(Math.floor(d.origin/30)*30,START,END-30);await commit(S.editPerson(snapshot(),Number(d.row.slice(2)),selected,[],[{start,end:start+30}]),'可能時間を追加しました');}
@@ -230,35 +269,90 @@
   $("print-form").onsubmit=e=>{e.preventDefault();printScope=$("print-scope").value;buildPrint(printScope);$("print-dialog").close();window.print();};window.addEventListener("beforeprint",()=>buildPrint(printScope));window.addEventListener("afterprint",()=>{printScope="current";});
   window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===3&&M.valid(saved.board)){pendingLocalBoard=saved.board;mobile?.refresh();if($("google-import-dialog").open||mobile?.editing)return;if(busy||dialogOpen()||drag||rowDrag?.active||meetingMenu?.pressing){toast("別タブで予定が更新されています。操作を終了すると最新の内容を反映します。");return;}applyPending();}}catch{}});
   document.querySelectorAll("dialog").forEach(dialog=>dialog.addEventListener("close",applyPending));
-  let rosterKind,rosterId;
-  function openRoster(kind,id){
-    if(!editable())return;rosterKind=kind;rosterId=id;
+  let rosterKind,rosterId,rosterContext;
+  async function changeRoster(action,params,message){
+    if(pendingBoard)throw Error('予定表が更新されました。画面を閉じてからやり直してください。');
+    const generation=accountGeneration;
+    setBusy(true);
+    try{
+      const result=await shared.changeRoster(action,params,revision);
+      if(generation!==accountGeneration||result.left)return false;
+      assign(result.board.payload);
+      access=result.board.access;
+      revision=result.board.version;
+      undo=[];redo=[];
+      if(result.id){
+        const createdIndex=rowMetadata.findIndex(row=>row.id===result.id);
+        const assigned=groups.filter(group=>group.members.includes(createdIndex));
+        if(assigned.length)assigned.forEach(group=>groupView.show(group.id));else groupView.show('@unassigned');
+      }
+      render();toast(message);return true;
+    }catch(error){
+      if(generation===accountGeneration&&['CONFLICT','DENIED'].includes(error.code))await shared.refresh();
+      throw error;
+    }finally{if(generation===accountGeneration)setBusy(false);}
+  }
+  function openRoster(kind,id,context=null){
+    if(!editable())return;
+    if(access&&kind==='person'&&(id===null||!canManage()))return;
+    if(kind==='group'&&!canManage()||kind==='place'&&(id===null?!canAddPlace():!isPlace(id)))return;
+    rosterKind=kind;rosterId=id;rosterContext=context;
     const group=kind==='group'?groups.find(g=>g.id===id):null;
-    $("roster-title").textContent=(kind==='group'?"グループ":"人")+(id===null?"を追加":"を編集");
-    $("roster-name-label").textContent=kind==='group'?"グループ名":"名前";
+    const label=kind==='group'?'グループ':kind==='place'?'場所・外部予定':'人';
+    const readOnly=kind==='place'&&id!==null&&!canManage();
+    $("roster-title").textContent=label+(id===null?'を追加':readOnly?'の操作':'を編集');
+    $("roster-name-label").textContent=kind==='group'?"グループ名":kind==='place'?'場所・外部予定の名前':"名前";
     $("roster-name").value=kind==='group'?(group?.name||""):(id===null?"":people[id]);
     $("membership-label").textContent=kind==='group'?"所属する人（複数選択可）":"所属グループ（複数選択可）";
     const choices=kind==='group'?people.map((name,i)=>({name,value:String(i),checked:group?.members.includes(i)})):groups.map(g=>({name:g.name,value:g.id,checked:id!==null&&g.members.includes(id)}));
-    $("membership-options").replaceChildren();choices.forEach(c=>{const label=el("label","membership-option"),input=el("input");input.type="checkbox";input.value=c.value;input.checked=Boolean(c.checked);label.append(input,document.createTextNode(c.name));$("membership-options").append(label);});
+    $("roster-name").readOnly=readOnly;$("roster-form").querySelector('button[type="submit"]').hidden=readOnly;
+    $("membership-options").replaceChildren();choices.forEach(c=>{const label=el("label","membership-option"),input=el("input");input.type="checkbox";input.value=c.value;input.checked=Boolean(c.checked);input.disabled=readOnly;label.append(input,document.createTextNode(c.name));$("membership-options").append(label);});
     if(!choices.length)$("membership-options").append(el("p","empty-members",kind==='group'?"人は後から追加できます。":"グループはまだありません。"));
     $("roster-error").textContent="";$("roster-delete-confirm").hidden=true;$("remove-row").hidden=id===null;
+    $('detach-place').hidden=!(access&&kind==='place'&&id!==null&&context);
     $("roster-dialog").showModal();$("roster-name").focus();
   }
-  $("add-person").onclick=()=>openRoster("person",null);$("add-group").onclick=()=>openRoster("group",null);
+  $("add-person").onclick=()=>openRoster(access?'place':'person',null);$("add-group").onclick=()=>openRoster("group",null);
+  $('place-help').querySelector('button').onclick=e=>e.currentTarget.setAttribute('aria-expanded',String(e.currentTarget.getAttribute('aria-expanded')!=='true'));
   ["close-roster","cancel-roster"].forEach(id=>$(id).onclick=()=>{if(!busy)$("roster-dialog").close();});
   $("roster-form").onsubmit=async e=>{e.preventDefault();if(!editable())return;
     try{const selected=[...$("membership-options").querySelectorAll("input:checked")].map(i=>i.value);
+      if(access&&rosterKind==='place'&&rosterId===null){
+        if(!canManage()&&!selected.length)throw Error('追加先のグループを選択してください。');
+        if(await changeRoster('add_place',{p_name:$("roster-name").value,p_payload:{groups:selected}},'場所・外部予定を追加しました'))$("roster-dialog").close();
+        return;
+      }
+      if(!canManage()||access&&rosterKind==='person'&&rosterId===null)return;
       const createdGroupId=rosterKind==='group'&&rosterId===null?crypto.randomUUID():null;
       const next=rosterKind==='group'?M.setGroup(snapshot(),createdGroupId??rosterId,$("roster-name").value,selected.map(Number)):M.setPerson(snapshot(),rosterId,$("roster-name").value,selected);
       if(await commit(next,rosterId===null?"追加しました":"更新しました")){if(createdGroupId)groupView.show(createdGroupId);$("roster-dialog").close();}
     }catch(error){$("roster-error").textContent=error.message;}
   };
   $("remove-row").onclick=()=>{const group=rosterKind==='group',name=group?groups.find(g=>g.id===rosterId).name:people[rosterId],count=events.filter(e=>group?e.group===rosterId:e.person===rosterId).length;
-    $("roster-delete-message").textContent=group?`${name}を削除し、このグループのMTGを解除して対象者の可能時間を戻します。所属する人は残ります。`:`${name}と予定${count}件、すべてのグループへの所属を削除します。「元に戻す」で復元できます。`;
+    $("roster-delete-message").textContent=group?`${name}を削除し、このグループのMTGを解除して対象者の可能時間を戻します。所属する人は残ります。`:
+      access?(rosterKind==='place'?`「${name}」を完全に削除します。すべてのグループから外れ、空き時間${count}件とMTGでの場所の確保が削除されます。この操作は元に戻せません。`:
+        `「${name}」を削除します。アカウントがひも付いている場合は組織から脱退となります。この行の空き時間${count}件とMTGへの参加が削除されます。この操作は元に戻せません。`):
+        `${name}と予定${count}件、すべてのグループへの所属を削除します。「元に戻す」で復元できます。`;
     $("roster-delete-confirm").hidden=false;
   };
   $("cancel-remove").onclick=()=>$("roster-delete-confirm").hidden=true;
-  $("confirm-remove").onclick=async()=>{if(!editable())return;try{const next=rosterKind==='group'?S.removeGroup(snapshot(),rosterId):M.removePerson(snapshot(),rosterId);if(await commit(next,"削除しました。「元に戻す」で復元できます。"))$("roster-dialog").close();}catch(error){$("roster-error").textContent=error.message;}};
+  $("confirm-remove").onclick=async()=>{
+    if(!editable())return;
+    try{
+      if(access&&rosterKind!=='group'){
+        if(!canManage()&&!isPlace(rosterId))return;
+        if(await changeRoster('remove_row',{p_member:rowMetadata[rosterId].id},'削除しました'))$("roster-dialog").close();
+      }else if(canManage()){
+        const next=rosterKind==='group'?S.removeGroup(snapshot(),rosterId):M.removePerson(snapshot(),rosterId);
+        if(await commit(next,"削除しました。「元に戻す」で復元できます。"))$("roster-dialog").close();
+      }
+    }catch(error){$("roster-error").textContent=error.code==='DENIED'&&rosterKind==='place'?'この場所・外部予定を完全に削除する権限がありません。グループから外すか、管理者にご相談ください。':error.message;}
+  };
+  $('detach-place').onclick=async()=>{
+    if(!editable()||!access||!rosterContext||!isPlace(rosterId))return;
+    try{if(await changeRoster('detach_place',{p_member:rowMetadata[rosterId].id,p_payload:rosterContext},'このグループから外しました'))$('roster-dialog').close();}
+    catch(error){$('roster-error').textContent=error.message;}
+  };
 
   $("auth-retry").onclick=()=>location.reload();
   $("copy-link").onclick=async()=>{
@@ -302,14 +396,15 @@
   document.addEventListener("keydown",event=>{
     if(event.key==="Escape"&&fullscreen&&!dialogOpen()&&!drag&&!rowDrag?.active&&!fullscreenPending){event.preventDefault();exitScheduleFullscreen();}
   },true);
-  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:editable,onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),removeAvailability:target=>commit(S.editPerson(snapshot(),target.person,target.date,[target],[]),'可能時間を削除しました'),notify:toast,settled:applyPending});
-  rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
+  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:target=>editable()&&(target.kind==='availability'?canEditPerson(target.person):canManage()),onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),removeAvailability:target=>commit(S.editPerson(snapshot(),target.person,target.date,[target],[]),'可能時間を削除しました'),notify:toast,settled:applyPending});
+  rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>canManage()&&editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
   window.TokiAvailabilityUI({board:snapshot,selected:()=>selected,excluded,notify:toast,canOpen:()=>ready&&!drag&&!rowDrag?.active});
   window.TokiMeetingExportUI({board:snapshot,selected:()=>selected,notify:toast,canOpen:()=>ready&&!busy&&!drag&&!rowDrag?.active&&!dialogOpen()});
   googleImportUI=window.TokiGoogleImportUI({
     context:()=>({board:snapshot(),fingerprint:JSON.stringify(snapshot()),pending:Boolean(pendingBoard||pendingLocalBoard)}),
     selected:()=>selected,
-    canOpen:()=>editable()&&!drag&&people.length>0&&navigator.onLine!==false,
+    canOpen:()=>editable()&&!drag&&canImport()&&navigator.onLine!==false,
+    canImportPerson:person=>!isPlace(person)&&canEditPerson(person),
     apply:async(plan,fingerprint)=>{
       if(pendingBoard||pendingLocalBoard||JSON.stringify(snapshot())!==fingerprint)throw Error('予定表が更新されています。画面を閉じ、最新の予定を確認してから再取得してください。');
       if(await commit(plan.board,'Googleカレンダーの空き時間を可能時間として反映しました')){selected=plan.range.first;render();return true;}
@@ -322,6 +417,7 @@
     context:()=>({board:snapshot(),date:selected,ready,busy,writable:editable(),pending:Boolean(pendingBoard||pendingLocalBoard),fingerprint:JSON.stringify(snapshot())}),
     interacting:()=>Boolean(drag||rowDrag?.active),
     selectDate,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
+    scoped:()=>Boolean(access),canManage,canEditRow,canAddPlace,ownPerson,isPlace,
     visibleGroup:id=>groupView.visible(id),openGroupView:()=>groupView.open(),
     commit:async(next,message,fingerprint)=>{
       if(pendingBoard||pendingLocalBoard||JSON.stringify(snapshot())!==fingerprint)throw Error('予定表が更新されました。画面を閉じ、最新の予定から編集してください。');
@@ -331,23 +427,25 @@
     notify:toast,settled:applyPending
   });
   window.addEventListener('online',()=>setBusy(busy));window.addEventListener('offline',()=>setBusy(busy));
+  function resetView(){
+    accountGeneration++;ready=false;busy=false;pendingBoard=null;pendingLocalBoard=null;revision=null;undo=[];redo=[];
+    access=null;
+    cancelDrag();rowDrag?.cancel();exitScheduleFullscreen();
+    assign({schemaVersion:4,people:[],groups:[],events:[],meetings:[]});displayBars.clear();
+    document.querySelectorAll('dialog[open]').forEach(d=>d.close());
+    for(const id of ['chart','print-area','membership-options','meeting-members','google-import-rows','meeting-export-groups','company-members','company-invites','export-person','google-import-person','group-view-choices'])$(id)?.replaceChildren();
+    for(const id of ['roster-name','share-url','company-invite-email','company-invite-name'])$(id).value='';
+    for(const id of ['meeting-title','meeting-time','meeting-menu-title','meeting-menu-time','meeting-menu-scope','google-import-summary','company-dialog-title','company-dialog-code','company-dialog-user'])if($(id))$(id).textContent='';
+    document.querySelectorAll('textarea').forEach(n=>{n.value='';});
+    $("schedule-app").hidden=true;$("mobile-app").hidden=true;$("auth-gate").hidden=initializing;
+    $("app-loading").hidden=!initializing;
+    mobile?.reset();mobile?.refresh();
+  }
   if(shared.enabled){
     try{await shared.initialize({
       board:receiveBoard,
       account:()=>{companyUI.render();mobile?.refresh();},
-      reset:()=>{
-        accountGeneration++;ready=false;busy=false;cancelDrag();rowDrag?.cancel();pendingBoard=null;pendingLocalBoard=null;revision=null;undo=[];redo=[];
-        exitScheduleFullscreen();
-        assign({schemaVersion:4,people:[],groups:[],events:[],meetings:[]});displayBars.clear();
-        document.querySelectorAll('dialog[open]').forEach(d=>d.close());
-        for(const id of ['chart','print-area','membership-options','meeting-members','google-import-rows','meeting-export-groups','company-members','company-invites','export-person','google-import-person','group-view-choices'])$(id)?.replaceChildren();
-        for(const id of ['roster-name','share-url','company-invite-email'])$(id).value='';
-        for(const id of ['meeting-title','meeting-time','meeting-menu-title','meeting-menu-time','meeting-menu-scope','google-import-summary','company-dialog-title','company-dialog-code','company-dialog-user'])if($(id))$(id).textContent='';
-        document.querySelectorAll('textarea').forEach(n=>{n.value='';});
-        $("schedule-app").hidden=true;$("mobile-app").hidden=true;$("auth-gate").hidden=initializing;
-        $("app-loading").hidden=!initializing;
-        mobile?.reset();mobile?.refresh();
-      },
+      reset:resetView,
       warning:toast,
       state:connectionState,
       error:error=>{

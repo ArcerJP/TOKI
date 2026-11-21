@@ -43,13 +43,13 @@ window.TokiMobileUI = function (bridge) {
   function mutationButton(text,run,label=text,cls=''){
     const b=button(text,run,label,cls);b.disabled=!bridge.context().writable;return b;
   }
-  function editButton(key,name){const b=button(bridge.context().writable?'編集':'確認',()=>openEditor(key),name+'の時間を編集','mob-text-button');b.disabled=bridge.context().busy;return b;}
+  function editButton(key,name){const b=button(bridge.context().writable&&bridge.canEditRow(key)?'編集':'確認',()=>openEditor(key),name+'の時間を編集','mob-text-button');b.disabled=bridge.context().busy;return b;}
   function render(){
     const ctx=bridge.context();root.hidden=!compact||!ctx.ready;if(!compact||!ctx.ready)return;
     if(lastScope!==scope()){lastScope=scope();lastRender='';folded=new Set();initialFolds=false;page='schedule';full=false;}
     hidden=new Set([...ctx.board.groups.map(g=>g.id),'@unassigned'].filter(id=>!bridge.visibleGroup(id)));
     if(!initialFolds){folded=new Set(ctx.board.groups.map(g=>g.id));initialFolds=true;}
-    const signature=JSON.stringify([ctx.fingerprint,ctx.date,ctx.writable,ctx.busy,page,view,full,[...hidden],[...folded],ctx.board.groups.map(g=>bridge.excluded(g.id)),...['save-status','connection-status','pwa-status','install-app','update-app','undo','redo','google-import-button'].map(id=>[$(id).textContent,$(id).hidden,$(id).disabled])]);
+    const signature=JSON.stringify([ctx.fingerprint,ctx.date,ctx.writable,ctx.busy,bridge.canManage(),bridge.ownPerson(),page,view,full,[...hidden],[...folded],ctx.board.groups.map(g=>bridge.excluded(g.id)),...['save-status','connection-status','pwa-status','install-app','update-app','undo','redo','google-import-button'].map(id=>[$(id).textContent,$(id).hidden,$(id).disabled])]);
     if(signature===lastRender)return;lastRender=signature;
     const previousScroll=root.querySelector('.mob-table-scroll'),tablePosition=previousScroll?[previousScroll.scrollLeft,previousScroll.scrollTop]:[0,0];
     const active=root.contains(document.activeElement)?document.activeElement.getAttribute('aria-label'):null;
@@ -119,12 +119,14 @@ window.TokiMobileUI = function (bridge) {
   }
   function availabilityActions(person,range){
     const ctx=bridge.context(),{d}=dialog(ctx.board.people[person]+'の可能時間');d.append(el('p',null,A.formatDay(ctx.date,[range])));
-    d.append(mutationButton('削除',async()=>{try{if(await bridge.commit(S.editPerson(ctx.board,person,ctx.date,[range],[]),'可能時間を削除しました',ctx.fingerprint))d.close();}catch(e){showError(d,e.message);}},undefined,'mob-danger'),button('時間をコピー',()=>copy(A.formatDay(ctx.date,[range]),d)));d.showModal();
+    if(bridge.canEditRow('p:'+person))d.append(mutationButton('削除',async()=>{try{if(await bridge.commit(S.editPerson(ctx.board,person,ctx.date,[range],[]),'可能時間を削除しました',ctx.fingerprint))d.close();}catch(e){showError(d,e.message);}},undefined,'mob-danger'));
+    d.append(button('時間をコピー',()=>copy(A.formatDay(ctx.date,[range]),d)));d.showModal();
   }
   function personCard(board,person,date,group=null){
     const name=board.people[person],card=el('section','mob-person'),head=el('div','mob-rowhead');
     const excluded=group&&bridge.excluded(group.id).includes(name);head.append(el('h3',excluded?'mob-excluded':'',name));
     if(excluded)head.append(el('span','mob-tag','対象外'));
+    if(bridge.isPlace(person))head.append(el('span','mob-tag','場所'));
     head.append(editButton('p:'+person,name));card.append(head);
     const times=S.personRanges(board,person,date),timesNode=el('div','mob-times');
     if(!times.length)timesNode.textContent='可能時間なし';
@@ -139,7 +141,7 @@ window.TokiMobileUI = function (bridge) {
     row.append(label,button('⋯',()=>openMeetingActions(m.id,person),meetingLabel(board,m,person===null)+' '+rangeText(m)+'の操作','mob-more-button'));holdAction(row,()=>openMeetingActions(m.id,person));return row;
   }
   function renderList(board,date){
-    let count=0;
+    let count=0,ownShown=false;
     for(const group of board.groups.filter(g=>!hidden.has(g.id))){
       count++;const card=el('section','mob-card'),head=el('div','mob-rowhead'),heading=el('h2',null,group.name);head.append(heading);
       head.append(editButton('g:'+group.id,group.name));card.append(head);
@@ -148,11 +150,12 @@ window.TokiMobileUI = function (bridge) {
       card.append(el('p','mob-times mob-common',!members.length?'対象者がいません':ranges.length?ranges.map(rangeText).join(' / '):'共通の可能時間なし'));
       for(const meeting of dayMeetings(board,date,m=>m.group===group.id))card.append(meetingLine(board,meeting));
       const toggle=button(`${folded.has(group.id)?'▸':'▾'} メンバー ${group.members.length}人`,()=>toggleFold(group.id),group.name+'のメンバー表示','mob-fold');toggle.setAttribute('aria-expanded',String(!folded.has(group.id)));card.append(toggle);
-      if(!folded.has(group.id)){card.append(el('p','mob-note','一時除外はこの端末のみ。所属・既存MTGは変わりません。'));for(const person of group.members)card.append(personCard(board,person,date,group));}
+      if(!folded.has(group.id)){card.append(el('p','mob-note','一時除外はこの端末のみ。所属・既存MTGは変わりません。'));for(const person of group.members){card.append(personCard(board,person,date,group));ownShown||=person===bridge.ownPerson();}}
       content.append(card);
     }
     const unassigned=M.rows(board).filter(r=>r.person!==undefined&&!r.context);
-    if(!hidden.has('@unassigned')&&unassigned.length){count++;const card=el('section','mob-card');card.append(el('h2',null,'未所属'));for(const row of unassigned)card.append(personCard(board,row.person,date));content.append(card);}
+    if(!hidden.has('@unassigned')&&unassigned.length){count++;const card=el('section','mob-card');card.append(el('h2',null,'未所属'));for(const row of unassigned){card.append(personCard(board,row.person,date));ownShown||=row.person===bridge.ownPerson();}content.append(card);}
+    if(bridge.ownPerson()>=0&&!ownShown){count++;const card=el('section','mob-card');card.append(el('h2',null,'自分の予定'),personCard(board,bridge.ownPerson(),date));content.prepend(card);}
     if(!count)content.append(el('p','mob-empty',board.people.length?'表示対象がありません。「表示グループ」で選択してください。':'まだメンバーがいません。下の「メンバー」から追加してください。'));
   }
   function renderTable(board,date){
@@ -160,7 +163,10 @@ window.TokiMobileUI = function (bridge) {
     const scroll=el('div','mob-table-scroll'),table=el('table','mob-table'),thead=el('thead'),tr=el('tr');table.setAttribute('aria-label',dayText(date)+'の比較表');
     tr.append(el('th',null,'名前'));const day=el('th',null,dayText(date));day.colSpan=32;tr.append(day);thead.append(tr);const times=el('tr');times.append(el('th',null,'可能時間'));
     for(let m=480;m<1440;m+=30)times.append(el('th',null,A.time(m)));thead.append(times);table.append(thead);const tbody=el('tbody');
-    for(const row of H.rows(board,[...hidden],folded).filter(r=>!hidden.has('@unassigned')||r.group||r.context)){
+    const visibleRows=H.rows(board,[...hidden],folded).filter(r=>!hidden.has('@unassigned')||r.group||r.context);
+    const own=bridge.ownPerson();
+    if(own>=0&&!visibleRows.some(row=>row.person===own))visibleRows.unshift({key:'p:'+own,person:own,name:board.people[own]});
+    for(const row of visibleRows){
       const r=el('tr',row.group?'mob-group-tr':''),name=el('th'),b=button(row.name,()=>openEditor(row.key),row.name+'の時間を編集');b.disabled=bridge.context().busy;name.append(b);
       if(row.context&&bridge.excluded(row.context).includes(row.name))b.classList.add('mob-excluded');r.append(name);
       const td=el('td');td.colSpan=32;const track=el('div','mob-table-track');
@@ -173,25 +179,47 @@ window.TokiMobileUI = function (bridge) {
     table.append(tbody);scroll.append(table);content.append(scroll);
   }
   function renderMembers(board){
-    content.append(el('h1',null,'メンバー'));const add=el('div','mob-actions');add.append(mutationButton('＋ 人を追加',()=>bridge.openRoster('person',null)),mutationButton('＋ グループ',()=>bridge.openRoster('group',null)));content.append(add);
+    content.append(el('h1',null,'メンバーと場所'));const add=el('div','mob-actions');
+    if(bridge.scoped()){
+      const control=el('span','place-add-control'),create=mutationButton('＋ 場所・外部予定を追加',()=>bridge.openRoster('place',null));
+      create.disabled||=!bridge.canAddPlace();
+      const help=el('span','place-help'),toggle=button('ⓘ',()=>toggle.setAttribute('aria-expanded',String(toggle.getAttribute('aria-expanded')!=='true')),'場所・外部予定の説明');
+      toggle.setAttribute('aria-controls','mobile-place-help-text');toggle.setAttribute('aria-expanded','false');
+      const description=el('span','place-help-text',$('place-help-text').textContent);description.id='mobile-place-help-text';
+      help.append(toggle,description);control.append(create,help);add.append(control);
+    }else add.append(mutationButton('＋ 人を追加',()=>bridge.openRoster('person',null)));
+    if(bridge.canManage())add.append(mutationButton('＋ グループ',()=>bridge.openRoster('group',null)));
+    content.append(add);
+    if(!bridge.canManage()){
+      if(!board.groups.length)content.append(el('p','mob-note','場所・外部予定を追加するには、管理者にグループの閲覧権限を依頼してください。'));
+      for(const group of board.groups){
+        const places=group.members.filter(bridge.isPlace);if(!places.length)continue;
+        const card=el('section','mob-card');card.append(el('h2',null,group.name));
+        for(const person of places)card.append(mutationButton(board.people[person],()=>bridge.openRoster('place',person,group.id),board.people[person]+'の設定を開く'));
+        content.append(card);
+      }
+      return;
+    }
     content.append(el('p','mob-note','名前・所属は「編集」。↑↓で並べ替えできます。ここでは非表示のグループも表示します。'));
     for(const [index,g] of board.groups.entries()){
       const card=el('section','mob-card'),head=el('div','mob-rowhead');head.append(el('h2',null,g.name),mutationButton('編集',()=>bridge.openRoster('group',g.id),g.name+'の設定を編集'));card.append(head);
       const controls=el('div','mob-actions');for(const [delta,text] of [[-1,'↑'],[1,'↓']]){const b=mutationButton(text,()=>reorder(board,()=>M.reorderGroup(board,g.id,board.groups[index+delta].id,delta>0)),g.name+(delta<0?'を上へ':'を下へ'));b.disabled||=index+delta<0||index+delta>=board.groups.length;controls.append(b);}card.append(controls);
       for(const [i,p] of g.members.entries()){
-        const row=el('div','mob-member-setting');row.append(el('span',null,board.people[p]),mutationButton('編集',()=>bridge.openRoster('person',p),board.people[p]+'の名前・所属を編集'));
+        const row=el('div','mob-member-setting');row.append(el('span',null,board.people[p]),mutationButton('編集',()=>bridge.openRoster(bridge.isPlace(p)?'place':'person',p,g.id),board.people[p]+'の名前・所属を編集'));
         for(const [delta,text] of [[-1,'↑'],[1,'↓']]){const b=mutationButton(text,()=>reorder(board,()=>M.placePerson(board,p,{group:g.id,target:g.members[i+delta],after:delta>0})),board.people[p]+(delta<0?'を上へ':'を下へ'));b.disabled||=i+delta<0||i+delta>=g.members.length;row.append(b);}card.append(row);
       }content.append(card);
     }
-    const people=M.rows(board).filter(r=>r.person!==undefined&&!r.context);if(people.length){const card=el('section','mob-card');card.append(el('h2',null,'未所属'));for(const [index,row] of people.entries()){const line=el('div','mob-member-setting');line.append(el('span',null,row.name),mutationButton('編集',()=>bridge.openRoster('person',row.person),row.name+'の名前・所属を編集'));for(const [delta,text] of [[-1,'↑'],[1,'↓']]){const b=mutationButton(text,()=>reorder(board,()=>M.reorderPeople(board,row.person,people[index+delta].person,delta>0)),row.name+(delta<0?'を上へ':'を下へ'));b.disabled||=index+delta<0||index+delta>=people.length;line.append(b);}card.append(line);}content.append(card);}
-    content.append(mutationButton('＋ 人を追加',()=>bridge.openRoster('person',null),'一覧の末尾から人を追加'));
+    const people=M.rows(board).filter(r=>r.person!==undefined&&!r.context);if(people.length){const card=el('section','mob-card');card.append(el('h2',null,'未所属'));for(const [index,row] of people.entries()){const line=el('div','mob-member-setting');line.append(el('span',null,row.name),mutationButton('編集',()=>bridge.openRoster(bridge.isPlace(row.person)?'place':'person',row.person),row.name+'の名前・所属を編集'));for(const [delta,text] of [[-1,'↑'],[1,'↓']]){const b=mutationButton(text,()=>reorder(board,()=>M.reorderPeople(board,row.person,people[index+delta].person,delta>0)),row.name+(delta<0?'を上へ':'を下へ'));b.disabled||=index+delta<0||index+delta>=people.length;line.append(b);}card.append(line);}content.append(card);}
+    if(!bridge.scoped())content.append(mutationButton('＋ 人を追加',()=>bridge.openRoster('person',null),'一覧の末尾から人を追加'));
   }
   async function reorder(board,make){try{await bridge.commit(make(),'並び順を変更しました',JSON.stringify(board));}catch(e){bridge.notify(e.message);}}
   async function copy(text,parent){try{await navigator.clipboard.writeText(text);bridge.notify('時間をコピーしました');}catch{const area=el('textarea');area.readOnly=true;area.value=text;area.setAttribute('aria-label','コピーする時間');parent.append(el('p','mob-note','コピーできない場合は、次の文字を選択してコピーしてください。'),area);area.focus();area.select();}}
   function openMeetingActions(id,person){
     const ctx=bridge.context(),m=ctx.board.meetings.find(m=>m.id===id);if(!m)return;const {d}=dialog('MTGの操作');d.append(el('p',null,dayText(m.date)+' '+rangeText(m)),el('p','mob-note',person===null?'対象者：'+m.members.map(p=>ctx.board.people[p]).join('、'):'対象者：'+ctx.board.people[person]));
-    if(person===null)d.append(mutationButton('時間・対象者を編集',()=>{d.close();openEditor('g:'+m.group,id);}));
-    d.append(mutationButton('削除（可能時間を復元）',async()=>{try{if(await bridge.commit(S.release(ctx.board,id,person===null?{}:{person}),'MTGを解除しました',ctx.fingerprint))d.close();}catch(e){showError(d,e.message);}},undefined,'mob-danger'));
+    if(bridge.canManage()){
+      if(person===null)d.append(mutationButton('時間・対象者を編集',()=>{d.close();openEditor('g:'+m.group,id);}));
+      d.append(mutationButton('削除（可能時間を復元）',async()=>{try{if(await bridge.commit(S.release(ctx.board,id,person===null?{}:{person}),'MTGを解除しました',ctx.fingerprint))d.close();}catch(e){showError(d,e.message);}},undefined,'mob-danger'));
+    }
     if(person===null)d.append(button('時間をコピー',()=>copy(A.formatDay(m.date,[m]),d)));d.showModal();
   }
   const editor=dialog('時間を編集',true);editor.d.id='mobile-editor';
@@ -239,7 +267,7 @@ window.TokiMobileUI = function (bridge) {
       if(['person','meeting'].includes(draft.choice.kind)){
         const move=el('div','mob-editor-extras');for(const [delta,title] of [[-30,'30分前へ'],[30,'30分後へ']])move.append(button(title,()=>{draft.op.to={start:draft.op.to.start+delta,end:draft.op.to.end+delta};draft.dirty=true;updatePreview();}));tools.append(move);
       }
-      if(draft.choice.kind==='person'&&draft.choice.from){
+      if(bridge.canManage()&&draft.choice.kind==='person'&&draft.choice.from){
         const label=el('label',null,'移動先の人'),target=el('select');target.setAttribute('aria-label','移動先の人');
         draft.ctx.board.people.forEach((name,p)=>{const o=el('option',null,name+(p===draft.person?'（そのまま）':''));o.value=String(p);target.append(o);});target.value=String(draft.person);target.onchange=()=>{draft.op.target=Number(target.value);draft.dirty=true;updatePreview();};label.append(target);tools.append(label);
       }
@@ -277,8 +305,9 @@ window.TokiMobileUI = function (bridge) {
     if(changed)try{draftPlan();}catch(e){error=e.message;}
     const current=bridge.context();if(current.pending||current.fingerprint!==draft.ctx.fingerprint)error='別の端末・タブで更新されました。閉じて最新の予定から編集してください。';
     else if(!current.writable)error=current.busy?'保存中…':'オフライン・閲覧のみ。接続が戻ってから編集してください。';
+    else if(!canEditDraft())error='この予定は閲覧のみです。';
     n.error.textContent=error||draft.saveError||'';n.save.disabled=!changed||Boolean(error);
-    n.tools.querySelectorAll('button').forEach(b=>b.disabled=current.busy||(!current.writable&&b.dataset.readonly!=='true'&&b.dataset.mode!=='scroll'));n.select.disabled=current.busy;
+    n.tools.querySelectorAll('button').forEach(b=>b.disabled=current.busy||((!current.writable||!canEditDraft())&&b.dataset.readonly!=='true'&&b.dataset.mode!=='scroll'));n.select.disabled=current.busy;
     n.tools.querySelectorAll('select').forEach(s=>s.disabled=!current.writable);
     n.tools.querySelectorAll('.mob-time-output').forEach((o,i)=>o.textContent=A.time(i?to.end:to.start));
     n.tools.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===draft.mode)));
@@ -294,9 +323,10 @@ window.TokiMobileUI = function (bridge) {
     n.preview.style.top=(to.start-480)*1.6+'px';n.preview.style.height=Math.max(1,(to.end-to.start)*1.6)+'px';n.preview.classList.toggle('mob-invalid',Boolean(error));n.preview.setAttribute('aria-label',rangeText(to));n.preview.hidden=draft.choice.kind==='personal-meeting';
   }
   function atPointer(e){const rect=editorNodes.track.getBoundingClientRect();return Math.max(480,Math.min(1440,480+(e.clientY-rect.top)/1.6));}
+  function canEditDraft(){return draft.choice.meeting?bridge.canManage():bridge.canEditRow(draft.key);}
   function pointerDown(e){
     if(gesture&&gesture.pointer!==e.pointerId){cancelGesture();return;}
-    if(e.button!==0||e.isPrimary===false||!draft||draft.mode==='scroll'||draft.choice.kind==='personal-meeting'||!bridge.context().writable)return;
+    if(e.button!==0||e.isPrimary===false||!draft||draft.mode==='scroll'||draft.choice.kind==='personal-meeting'||!bridge.context().writable||!canEditDraft())return;
     e.preventDefault();const cursor=atPointer(e),mode=e.target.dataset.handle||draft.mode;
     gesture={pointer:e.pointerId,origin:cursor,before:{...draft.op.to},dirty:draft.dirty,mode};editorNodes.track.setPointerCapture(e.pointerId);
     if(mode==='select'){const start=Math.min(1410,Math.floor(cursor/30)*30);draft.op.to={start,end:start+30};draft.dirty=true;updatePreview();}

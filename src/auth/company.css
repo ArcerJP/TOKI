@@ -14,6 +14,16 @@
 .account-button, #mobile-app .account-button { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; min-width:44px; padding:8px; border-radius:50%; flex:none; }
 .account-icon { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; }
 #company-admin-controls { border:0; padding:0; margin:0; min-width:0; }
+.place-add-control { display:inline-flex; align-items:center; gap:4px; }
+.place-help { position:relative; color:#61766d; font-size:.875rem; }
+.place-help button { color:inherit; font-size:inherit; padding:0; min-width:32px; min-height:32px; border:0; background:transparent; }
+.place-help-text { display:none; position:absolute; z-index:12; top:100%; right:0; width:min(16rem,55vw); padding:10px; background:white; border:1px solid #cbd9d1; border-radius:8px; }
+.place-help button[aria-expanded="true"] + .place-help-text,.place-help button:focus-visible + .place-help-text { display:block; }
+@media (hover:hover) { .place-help:hover .place-help-text { display:block; } }
+@media (pointer:coarse) { .place-help button { min-width:44px; min-height:44px; } }
+.company-member-settings { flex-basis:100%; display:grid; gap:8px; }
+.company-member-settings fieldset { min-width:0; margin:0; padding:6px 10px; border:1px solid #dce5e2; border-radius:8px; }
+.company-member-settings label { display:block; overflow-wrap:anywhere; }
 #company-admin-status { color:#245c4b; overflow-wrap:anywhere; }
 .group-view-choices { display:grid; gap:4px; max-height:50dvh; overflow:auto; margin-block:12px; }
 .group-view-choices label, .group-view-all { display:flex; gap:12px; align-items:center; min-height:44px; padding:8px 12px; border-radius:8px; cursor:pointer; }

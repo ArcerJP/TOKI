@@ -5,10 +5,12 @@ const S=require('../src/core/schedule.js');
 const date='2026-10-05';
 const seed=()=>S.reserve({schemaVersion:4,people:['A','B','C','D'],groups:[{id:'a',name:'局A',members:[0,1]},{id:'b',name:'局B',members:[1,2]}],events:[0,1,2].map(person=>({id:'e'+person,person,date,start:540,end:1080})),meetings:[]},'a',date,[{start:780,end:840}]);
 const flush=()=>new Promise(resolve=>setTimeout(resolve,40));
-async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a'}={}){
+async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false}={}){
   const errors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',e=>errors.push(e));
   const dom=new JSDOM(fs.readFileSync(sourcePath('index.html'),'utf8'),{url:'https://example.test/TOKI/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
   const w=dom.window,d=w.document,media=[];let board=seed(),version=1,hooks,online=true,saves=0,failSave=false;
+  const access=scoped?{role:'member',personId:'00000000-0000-4000-8000-000000000001'}:undefined;
+  if(scoped)board.rows=board.people.map((_,i)=>({id:'00000000-0000-4000-8000-00000000000'+(i+1),kind:i===1?'place':'person'}));
   board.groups[0].id=groupId;board.meetings.filter(m=>m.group==='a').forEach(m=>m.group=groupId);
   w.scrollTo=()=>{};w.confirm=()=>{throw Error('Unexpected browser confirmation');};
   w.matchMedia=query=>{const entry={media:query,matches:false,listeners:[],addEventListener(type,fn){this.listeners.push(fn);}};media.push(entry);entry.matches=query.includes('767')?width<=767:width<=1023&&coarse;return entry;};
@@ -21,7 +23,7 @@ async function environment(t,{width=390,coarse=false,shared=false,preselect=true
   w.TOKI_CONFIG={boardId:'test-board'};w.TOKI_DATA={people:[],dates:[date],availability:[]};w.TOKI_DATA_READY=Promise.resolve();
   w.localStorage.setItem('toki-selected-date',date);w.localStorage.setItem('toki-availability-v3',JSON.stringify({version:3,board}));
   if(preselect)w.localStorage.setItem('toki-view-v1:'+(shared?'shared':'local')+':groups',JSON.stringify({version:1,selected:[groupId,'b','@unassigned']}));
-  w.TokiShared={enabled:shared,get online(){return online;},shareUrl:()=>'',initialize:async h=>{hooks=h;h.board({version,payload:board});},save:async next=>{if(failSave)throw Error('試験：保存失敗');saves++;board=structuredClone(next);return {version:++version,payload:board};},refresh:async()=>{}};
+  w.TokiShared={enabled:shared,get online(){return online;},shareUrl:()=>'',initialize:async h=>{hooks=h;h.board({version,payload:board,access});},save:async next=>{if(failSave)throw Error('試験：保存失敗');saves++;board=structuredClone(next);return {version:++version,payload:board,access};},refresh:async()=>{}};
   for(const name of ['model','availability','schedule','availability-ui','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-ui','group-view','company-ui','app'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
   await flush();await flush();
   t.after(()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[]);});
@@ -40,6 +42,34 @@ test('a valid group ID named __proto__ remains ordinary persisted exclusion data
   const saved=JSON.parse(e.w.localStorage.getItem('toki-view-v1:local:excluded'));
   assert.equal(Object.hasOwn(saved,'__proto__'),true);assert.deepEqual(saved.__proto__,['A']);
   assert.equal(e.$('mobile-app').querySelector('.mob-excluded').textContent,'A');assert.equal(JSON.stringify(e.current()),before);
+});
+
+test('members can edit their own and place times on mobile, while other people and MTGs are view-only',async t=>{
+  const e=await environment(t,{shared:true,scoped:true});
+  assert.equal(e.$('add-group').hidden,true);
+  assert.equal(e.$('add-person').textContent,'＋ 場所・外部予定を追加');
+  await e.click('局Bのメンバー表示');
+  await e.click('Cの時間を編集');
+  assert.equal(e.button('保存').disabled,true);
+  assert.match(e.error,/閲覧のみ/);
+  await e.click('閉じる');
+  await e.click('局Aのメンバー表示');
+  await e.click('Aの時間を編集');
+  await e.select('編集する時間','range:0');
+  await e.click('開始を30分遅らせる');
+  await e.click('保存');
+  assert.equal(e.saves,1);
+  assert.ok(e.current().events.some(event=>event.person===0&&event.start===570));
+  await e.click('Bの時間を編集');
+  await e.select('編集する時間','range:0');
+  await e.click('開始を30分遅らせる');
+  await e.click('保存');
+  assert.equal(e.saves,2);
+  assert.ok(e.current().events.some(event=>event.person===1&&event.start===570));
+  await e.resize(1440);
+  assert.equal(e.$('chart').querySelectorAll('.row-drag-handle').length,0);
+  assert.ok(e.$('chart').querySelector('[aria-label="Bを編集・削除"]'));
+  assert.equal(e.$('chart').querySelector('[aria-label="Cを編集・削除"]'),null);
 });
 
 test('first visit hides all groups and shares the explicit selection between desktop and mobile',async t=>{

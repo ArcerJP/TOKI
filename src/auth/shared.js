@@ -6,6 +6,13 @@
   let client,authStorage,user=null,company=null,companies=[],online=false,fetchedAt=null,epoch=0,refreshing=false,initialized=false,retryAt=0;
   const emit=(event,value)=>hooks[event]?.(value),error=(message,code)=>Object.assign(Error(message),{code});
   const messages={MEMBER_NOT_STOPPED:'アクセス停止中の参加者だけ削除できます。一覧を開き直して状態を確認してください。',JOIN_LIMIT:'参加申請が混み合っています。時間を置くか、管理者にメールアドレスでの招待を依頼してください。',REQUEST_EXPIRED:'参加申請の期限が切れました。組織コードからもう一度申請してください。',RATE_LIMIT:'操作が集中しています。1分ほど待ってから再度お試しください。',AUTH:'Googleでログインしてください。',DENIED:'この組織のアクセス権限がありません。管理者に確認してください。',COMPANY:'組織コードを確認してください。',CONFLICT:'他の人が予定を変更しました。最新の予定からもう一度編集してください。',INVALID:'入力内容を確認してください。',LAST_ADMIN:'最後の管理者は解除できません。先に別の管理者を設定してください。',LIMIT:'登録数の上限に達しました。管理者に確認してください。',NETWORK:'接続できません。保存済みの予定は閲覧のみ利用できます。',CONFIG:'組織の認証設定が完了していません。管理者に確認してください。',STALE:'画面が切り替わったため処理を中止しました。'};
+  Object.assign(messages,{
+    UPDATE_REQUIRED:'最新版に更新してから、もう一度お試しください。',
+    NAME_INVALID:'表示名は1〜40文字で入力してください。',
+    NAME_TAKEN:'その名前はすでに使用されています。別の名前を入力してください。',
+    MEMBER_EXISTS:'このアカウントはすでに登録されています。参加者一覧で確認してください。',
+    SCHEDULE_BUSY:'登録済みのMTGと重なるため保存できません。',
+  });
   const read=(key,fallback=null)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
   const write=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{emit('warning','端末に保存できません。オフライン閲覧や表示設定の保存が利用できない場合があります。');}};
   const remove=key=>{try{localStorage.removeItem(key);}catch{}};
@@ -20,11 +27,23 @@
     const keys=[];try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key?.startsWith(PREFIX+id+':')||key?.startsWith('toki-view-v1:'+id+':'))keys.push(key);}}catch{}
     keys.forEach(remove);remove(PROFILE);
   }
-  const validBoard=b=>b?.companyId===company?.id&&Number.isSafeInteger(b.version)&&b.version>=1&&window.TokiModel.valid(b.payload);
-  function cached(){if(!user||!company)return null;const entry=read(companyKey(company.id));return entry?.userId===user.id&&entry.companyId===company.id&&Number.isFinite(entry.fetchedAt)&&validBoard(entry.board)?entry:null;}
+  const validBoard=(b,organization=company)=>Boolean(b&&organization&&b.companyId===organization.id&&Number.isSafeInteger(b.version)&&b.version>=1&&window.TokiModel.valid(b.payload)&&
+    (b.access?['admin','member'].includes(b.access.role)&&Array.isArray(b.payload.rows)&&
+      (b.access.personId===null||b.payload.rows.some(row=>row.kind==='person'&&row.id===b.access.personId)):!organization.scopedSchedule));
+  function cached(organization=company){
+    if(!user||!organization)return null;
+    const entry=read(companyKey(organization.id));
+    return entry?.userId===user.id&&entry.companyId===organization.id&&Number.isFinite(entry.fetchedAt)&&
+      validBoard(entry.board,organization)&&(!entry.board.access||entry.board.access.role===organization.role)?entry:null;
+  }
   function cacheBoard(board){
     if(!validBoard(board))throw error(messages.INVALID,'INVALID');
     const previous=cached();if(previous?.board.version>board.version)return;
+    if(board.access){
+      company={...company,role:board.access.role,scopedSchedule:true};
+      companies=companies.map(c=>c.id===company.id?company:c);
+      remember();
+    }
     fetchedAt=Date.now();write(companyKey(company.id),{userId:user.id,companyId:company.id,board,fetchedAt});
   }
   function networkFailure(failure,status){return !status||status===0||status>=500||/fetch|network|通信/i.test(failure?.message||'');}
@@ -45,10 +64,18 @@
   const remember=()=>{write(PROFILE,profile());write(PREFIX+user.id+':companies',companies);};
   async function listCompanies(){
     const data=await rpc('list');if(!Array.isArray(data)||!data.every(validCompany))throw error(messages.INVALID,'INVALID');
+    const persisted=read(PREFIX+user.id+':companies',[]);
+    if(Array.isArray(persisted))for(const prior of persisted.filter(validCompany)){
+      const current=data.find(c=>c.id===prior.id&&c.status==='active');
+      if(!current||!cached(current))remove(companyKey(prior.id));
+    }
     companies=data;
     if(company){
       const current=companies.find(c=>c.id===company.id&&c.status==='active');
-      if(current)company=current;
+      if(current){
+        company=current;
+        if(current.scopedSchedule&&!cached())remove(companyKey(company.id));
+      }
       else {remove(companyKey(company.id));reset();company=null;}
     }
     remember();state();return companies;
@@ -172,17 +199,30 @@
       // not make a completed transfer look like a failed operation.
       company={...company,role:'member'};
       companies=companies.map(c=>c.id===company.id?company:c);remember();state();
-    }else if(action!=='members')await listCompanies();
+    }else if(action!=='members'){
+      await listCompanies();
+      if(company?.scopedSchedule)await refresh();
+    }
     return value;
   }
   async function save(payload,version){
     if(!online||!company)throw error(messages.NETWORK,'NETWORK');
     try{const board=await rpc('save',{p_company:company.id,p_payload:payload,p_version:version});cacheBoard(board);connection(true);return board;}
-    catch(failure){if(!['CONFLICT','STALE'].includes(failure.code))failed(failure);throw failure;}
+    catch(failure){
+      const rejected=['DENIED','NAME_TAKEN','NAME_INVALID','SCHEDULE_BUSY','INVALID','LIMIT','UPDATE_REQUIRED'];
+      if(!['CONFLICT','STALE'].includes(failure.code)&&!(company?.scopedSchedule&&rejected.includes(failure.code)))failed(failure);
+      throw failure;
+    }
+  }
+  async function changeRoster(action,extra,version){
+    if(!online||!company)throw error(messages.NETWORK,'NETWORK');
+    const value=await rpc(action,{p_company:company.id,p_version:version,...extra});
+    if(value?.left===true){remove(companyKey(company.id));leaveView();await listCompanies();return {left:true};}
+    cacheBoard(value?.board);connection(true);return value;
   }
   function leaveView(){reset();company=null;state();}
   const shareUrl=()=>config.siteUrl+(company?'#company='+encodeURIComponent(company.code):'');
-  window.TokiShared={enabled,companyAccess:true,initialize,save,refresh,fetchBoard,shareUrl,login,logout,join,selectCompany,listCompanies,manage,leaveView,
+  window.TokiShared={enabled,companyAccess:true,initialize,save,changeRoster,refresh,fetchBoard,shareUrl,login,logout,join,selectCompany,listCompanies,manage,leaveView,
     get online(){return online;},get scope(){return scope();},get user(){return profile();},get company(){return company;},get companies(){return companies;},
     get pendingCode(){return new URLSearchParams(location.hash.slice(1)).get('company')||read(PREFIX+'join-code','');}};
 })();

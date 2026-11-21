@@ -35,6 +35,9 @@
     if(board?.schemaVersion!==4)return validLegacy(board);
     if(!Array.isArray(board.meetings)||board.meetings.length>2000||!Array.isArray(board.events)||board.events.some(e=>!e||Object.hasOwn(e,'title')||Object.hasOwn(e,'detail')||Object.hasOwn(e,'group')))return false;
     if(!validLegacy({...board,schemaVersion:3,events:board.events.map(e=>({...e,title:'可能時間',detail:''}))}))return false;
+    if(Object.hasOwn(board,'rows')&&(!Array.isArray(board.rows)||board.rows.length!==board.people.length||
+      board.rows.some(row=>!row||typeof row.id!=='string'||!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(row.id)||!['person','place'].includes(row.kind))||
+      new Set(board.rows.map(row=>row.id)).size!==board.rows.length))return false;
     const ids=new Set(board.events.map(e=>e.id));
     for(const m of board.meetings){
       if(!m||typeof m.id!=='string'||!m.id.length||m.id.length>100||ids.has(m.id)||!board.groups.some(g=>g.id===m.group)||!validDate(m.date)||!Number.isInteger(m.start)||!Number.isInteger(m.end)||m.start<480||m.end>1440||m.start>=m.end||!Array.isArray(m.members)||!m.members.length||new Set(m.members).size!==m.members.length||m.members.some(p=>!Number.isInteger(p)||p<0||p>=board.people.length))return false;
@@ -44,14 +47,21 @@
   }
   function checked(board){if(!valid(board))throw Error('入力内容を確認してください。');return board;}
   function checkName(value,names,skip=-1){const name=normalizeName(value);if(!name||name.length>40)throw Error('名前は1〜40文字で入力してください。');if(names.some((n,i)=>i!==skip&&nameKey(n)===nameKey(name)))throw Error('その名前はすでに登録されています。別の名前にしてください。');return name;}
-  function setPerson(board,index,value,groupIds=[]){const b=clone(board);const name=checkName(value,b.people,index);if(index===null){index=b.people.length;b.people.push(name);}else b.people[index]=name;
+  function setPerson(board,index,value,groupIds=[],kind='person'){
+    const b=clone(board),name=checkName(value,b.people,index);
+    if(kind==='place'&&!b.rows)b.rows=b.people.map(()=>({id:crypto.randomUUID(),kind:'person'}));
+    if(index===null){
+      index=b.people.length;
+      b.people.push(name);
+      b.rows?.push({id:crypto.randomUUID(),kind});
+    }else b.people[index]=name;
     b.groups.forEach(g=>{if(!groupIds.includes(g.id))g.members=g.members.filter(i=>i!==index);else if(!g.members.includes(index))g.members.push(index);});return checked(b);}
-  function removePerson(board,index){const b=clone(board);b.people.splice(index,1);b.events=b.events.filter(e=>e.person!==index).map(e=>e.person>index?{...e,person:e.person-1}:e);b.groups.forEach(g=>g.members=g.members.filter(i=>i!==index).map(i=>i>index?i-1:i));if(b.meetings)b.meetings=b.meetings.map(m=>({...m,members:m.members.filter(i=>i!==index).map(i=>i>index?i-1:i)})).filter(m=>m.members.length);return checked(b);}
+  function removePerson(board,index){const b=clone(board);b.people.splice(index,1);b.rows?.splice(index,1);b.events=b.events.filter(e=>e.person!==index).map(e=>e.person>index?{...e,person:e.person-1}:e);b.groups.forEach(g=>g.members=g.members.filter(i=>i!==index).map(i=>i>index?i-1:i));if(b.meetings)b.meetings=b.meetings.map(m=>({...m,members:m.members.filter(i=>i!==index).map(i=>i>index?i-1:i)})).filter(m=>m.members.length);return checked(b);}
   function setGroup(board,id,value,members){const b=clone(board),index=b.groups.findIndex(g=>g.id===id),name=checkName(value,b.groups.map(g=>g.name),index);const previous=b.groups[index]?.members||[];const group={id,name,members:[...previous.filter(i=>members.includes(i)),...new Set(members.filter(i=>!previous.includes(i)))]};if(index<0)b.groups.push(group);else b.groups[index]=group;return checked(b);}
   function removeGroup(board,id){const b=clone(board);b.groups=b.groups.filter(g=>g.id!==id);b.events=b.events.filter(e=>e.group!==id);return checked(b);}
   function rows(board,collapsed=new Set()){const assigned=new Set(board.groups.flatMap(g=>g.members)),rows=[];board.groups.forEach(g=>{rows.push({key:`g:${g.id}`,name:g.name,group:g});if(!collapsed.has(g.id))g.members.forEach(person=>rows.push({key:`p:${person}`,name:board.people[person],person,nested:true,context:g.id}));});board.people.forEach((name,person)=>{if(!assigned.has(person))rows.push({key:`p:${person}`,name,person,context:null});});return rows;}
   // Reordering the people array must remap all event and membership references together.
-  function reorderPeople(board,person,target=null,after=false){const b=clone(board);if(target===person)return b;const order=b.people.map((_,i)=>i).filter(i=>i!==person);const at=target===null?order.length:order.indexOf(target)+(after?1:0);order.splice(at,0,person);const positions=new Map(order.map((old,index)=>[old,index]));b.people=order.map(i=>b.people[i]);b.events=b.events.map(e=>e.person===undefined?e:{...e,person:positions.get(e.person)});b.groups.forEach(g=>g.members=g.members.map(i=>positions.get(i)));b.meetings?.forEach(m=>m.members=m.members.map(i=>positions.get(i)));return checked(b);}
+  function reorderPeople(board,person,target=null,after=false){const b=clone(board);if(target===person)return b;const order=b.people.map((_,i)=>i).filter(i=>i!==person);const at=target===null?order.length:order.indexOf(target)+(after?1:0);order.splice(at,0,person);const positions=new Map(order.map((old,index)=>[old,index]));b.people=order.map(i=>b.people[i]);if(b.rows)b.rows=order.map(i=>b.rows[i]);b.events=b.events.map(e=>e.person===undefined?e:{...e,person:positions.get(e.person)});b.groups.forEach(g=>g.members=g.members.map(i=>positions.get(i)));b.meetings?.forEach(m=>m.members=m.members.map(i=>positions.get(i)));return checked(b);}
   function reorderGroup(board,id,target=null,after=false){const b=clone(board),group=b.groups.find(g=>g.id===id);if(!group||target!==null&&!b.groups.some(g=>g.id===target))throw Error('移動するグループが見つかりません。');if(target===id)return b;b.groups=b.groups.filter(g=>g.id!==id);const at=target===null?b.groups.length:b.groups.findIndex(g=>g.id===target)+(after?1:0);b.groups.splice(at,0,group);return checked(b);}
   function placePerson(board,person,{group=null,target=null,after=false,source=null,move=false}={}){
     if(!Number.isInteger(person)||person<0||person>=board.people.length||target!==null&&(!Number.isInteger(target)||target<0||target>=board.people.length))throw Error('移動する人が見つかりません。');

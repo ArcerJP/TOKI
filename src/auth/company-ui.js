@@ -38,6 +38,33 @@ window.TokiCompanyUI=()=>{
     $('company-admin').hidden=true;$('company-admin-controls').disabled=true;
     $('company-members').replaceChildren();$('company-invites').replaceChildren();
   }
+  function addMemberSettings(row,member,groups,action){
+    const settings=el('div');settings.className='company-member-settings';
+    if(!member.personId){
+      const label=el('label','予定表の表示名 '),name=el('input');
+      name.type='text';name.maxLength=40;name.autocomplete='off';label.append(name);
+      const text=member.status==='active'?'人の行を作成':member.status==='pending'?'参加を承認':'参加を再許可';
+      settings.append(label,button(text,()=>{
+        if(!name.value.trim()){showAdminError('予定表の表示名を入力してください。');name.focus();return;}
+        return action(member.status==='active'?'assign_person':'approve',{p_member:member.id,p_name:name.value});
+      }));
+    }
+    if(member.status==='active'&&member.role==='member'){
+      const details=el('details'),fieldset=el('fieldset');
+      details.append(el('summary','閲覧できるグループ'));
+      fieldset.append(el('legend','このメンバーが閲覧できるグループ'));
+      if(!groups.length)fieldset.append(el('p','グループを作成すると選択できます。'));
+      for(const group of groups){
+        const label=el('label'),box=el('input');box.type='checkbox';box.value=group.id;
+        box.checked=member.groupIds.includes(group.id);label.append(box,document.createTextNode(group.name));fieldset.append(label);
+      }
+      details.append(fieldset,button('閲覧権限を保存',()=>action('set_group_access',{
+        p_member:member.id,p_payload:[...fieldset.querySelectorAll('input:checked')].map(input=>input.value),
+      })));
+      settings.append(details);
+    }
+    row.append(settings);
+  }
   const sameView=(companyId,userId,generation)=>$('company-dialog').open&&shared.company?.id===companyId&&shared.user?.id===userId&&view===generation;
   const adminBusy=value=>{pending=value;$('company-admin-controls').disabled=value||shared.company?.role!=='admin'||!shared.online;};
   async function adminList(){
@@ -50,6 +77,8 @@ window.TokiCompanyUI=()=>{
       await shared.listCompanies();if(!current())return;
       if(shared.company.role!=='admin'){$('company-admin-status').textContent='一般メンバー';return;}
       const data=await shared.manage('members');if(!current()||shared.company.role!=='admin')return;
+      const scoped=Array.isArray(data.groups);
+      $('company-invite-name-label').hidden=!scoped;$('company-invite-name').hidden=!scoped;
       $('company-admin-status').textContent='組織の管理者';$('company-admin').hidden=false;adminBusy(pending);
       const action=async(kind,params)=>{
         if(pending||!current()||shared.company.role!=='admin'||!shared.online)return;
@@ -60,16 +89,22 @@ window.TokiCompanyUI=()=>{
         finally{adminBusy(false);}
       };
       for(const m of data.members){const row=el('div');row.className='company-member';row.append(el('strong',m.name),el('span',m.email),el('small',({pending:'承認待ち',active:m.role==='admin'?'管理者':'メンバー',blocked:'アクセス停止'})[m.status]));
-        if(m.status!=='active')row.append(button(m.status==='pending'?'参加を承認':'参加を再許可',()=>action('approve',{p_member:m.id})));
+        if(m.status!=='active'){
+          if(!scoped||m.personId)row.append(button(m.status==='pending'?'参加を承認':'参加を再許可',()=>action('approve',{p_member:m.id})));
+        }
         else {const demote=m.role==='admin';row.append(button(demote?'一般メンバーに変更':'管理者に変更',()=>{
           if(pending||!current()||shared.company.role!=='admin'||!shared.online)return;
           if(confirm(m.email+'を'+(demote?'一般メンバー':'管理者')+'に変更しますか？\n'+(demote?'対象者は、この組織の管理操作ができなくなります。':'他の参加者の権限は変わりません。')))return action('role',{p_member:m.id,p_role:demote?'member':'admin'});
         }));}
         if(m.status!=='blocked')row.append(button('アクセスを停止',()=>{if(pending||!current()||shared.company.role!=='admin'||!shared.online)return;if(confirm(m.email+'の組織へのアクセスを停止しますか？端末のオフラインデータは即時には消去できません。'))return action('block',{p_member:m.id});}));
-        else {const remove=button('組織から削除',()=>{if(pending||!current())return;if(confirm(m.email+' を「'+company.name+'」の参加者一覧から削除しますか？\n予定表の人の行・可能時間・MTGは残ります。\nアクセス停止の記録も削除され、再参加には改めて招待・承認が必要です。'))return action('remove_member',{p_member:m.id});});remove.className='danger';row.append(remove);}
+        else {
+          const remove=button('組織から削除',()=>{if(pending||!current())return;if(confirm(m.email+' を「'+company.name+'」の参加者一覧から削除しますか？\n予定表の人の行・可能時間・MTGは残ります。\nアクセス停止の記録も削除され、再参加には改めて招待・承認が必要です。'))return action('remove_member',{p_member:m.id});});
+          remove.className='danger';row.append(remove);
+        }
+        if(scoped&&(!m.personId||m.status==='active'&&m.role==='member'))addMemberSettings(row,m,data.groups,action);
         $('company-members').append(row);
       }
-      for(const invite of data.invites){const row=el('div');row.className='company-choice';row.append(el('span',invite.email+(Date.parse(invite.expiresAt)<=Date.now()?'（期限切れ）':'（招待済み）')),button('招待を取り消す',()=>action('cancel_invite',{p_email:invite.email})));$('company-invites').append(row);}
+      for(const invite of data.invites){const row=el('div');row.className='company-choice';row.append(el('span',(invite.displayName?invite.displayName+' · ':'')+invite.email+(Date.parse(invite.expiresAt)<=Date.now()?'（期限切れ）':'（招待済み）')),button('招待を取り消す',()=>action('cancel_invite',{p_email:invite.email})));$('company-invites').append(row);}
     }catch(e){if(current()){$('company-admin-status').textContent='権限を確認できませんでした';showAdminError(e.message);}}
   }
   $('company-button').onclick=adminList;
@@ -77,6 +112,20 @@ window.TokiCompanyUI=()=>{
   $('company-dialog').addEventListener('close',()=>{view++;clearAdmin();$('company-admin-status').textContent='';$('company-admin-error').textContent='';});
   $('company-switch').onclick=()=>{$('company-dialog').close();shared.leaveView();};
   $('company-dialog-logout').onclick=()=>{$('company-dialog').close();run(()=>shared.logout());};
-  $('company-invite-button').onclick=async()=>{if(pending||shared.company?.role!=='admin')return;const companyId=shared.company.id,identity=shared.user.id,generation=view;adminBusy(true);$('company-admin-error').textContent='';try{await shared.manage('invite',{p_email:$('company-invite-email').value});if(sameView(companyId,identity,generation)){$('company-invite-email').value='';await adminList();}}catch(e){if(sameView(companyId,identity,generation))showAdminError(e.message);}finally{adminBusy(false);}};
+  $('company-invite-button').onclick=async()=>{
+    if(pending||shared.company?.role!=='admin')return;
+    const companyId=shared.company.id,identity=shared.user.id,generation=view;
+    const name=$('company-invite-name'),params={p_email:$('company-invite-email').value};
+    if(!name.hidden){
+      if(!name.value.trim()){showAdminError('予定表の表示名を入力してください。');name.focus();return;}
+      params.p_name=name.value;
+    }
+    adminBusy(true);$('company-admin-error').textContent='';
+    try{
+      await shared.manage('invite',params);
+      if(sameView(companyId,identity,generation)){$('company-invite-email').value='';name.value='';await adminList();}
+    }catch(e){if(sameView(companyId,identity,generation))showAdminError(e.message);}
+    finally{adminBusy(false);}
+  };
   return {render};
 };
