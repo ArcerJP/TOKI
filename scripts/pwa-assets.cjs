@@ -14,6 +14,7 @@ const sources = Object.freeze({
   'data.js': 'src/app/data.js',
   'config.js': 'public/config.js',
   'auth-storage.js': 'src/auth/auth-storage.js',
+  'guest.js': 'src/auth/guest.js',
   'shared.js': 'src/auth/shared.js',
   'pwa.js': 'src/app/pwa.js',
   'manifest.webmanifest': 'public/manifest.webmanifest',

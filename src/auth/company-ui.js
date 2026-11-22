@@ -61,12 +61,13 @@ window.TokiCompanyUI=()=>{
     $('company-admin').hidden=true;$('company-admin-controls').disabled=true;
     $('company-members').replaceChildren();$('company-invites').replaceChildren();
     $('company-unused-pins').replaceChildren();
-    if(shared.company?.role!=='admin')clearInvitationForm();
+    $('company-guest-section').hidden=true;$('company-guests').replaceChildren();$('company-guest-choices').replaceChildren();
+    if(shared.company?.role!=='admin'){clearInvitationForm();clearGuestLink();}
   }
-  function groupChoices(groups,selected=[]){
+  function groupChoices(groups,selected=[],legend='閲覧を許可するグループ',empty='選択できるグループはありません。'){
     const fieldset=el('fieldset');fieldset.className='company-group-choices';
-    fieldset.append(el('legend','閲覧を許可するグループ'));
-    if(!groups.length)fieldset.append(el('p','選択できるグループはありません。'));
+    fieldset.append(el('legend',legend));
+    if(!groups.length)fieldset.append(el('p',empty));
     for(const group of groups){
       const label=el('label'),box=el('input');
       box.type='checkbox';box.value=group.id;box.checked=selected.includes(group.id);
@@ -75,6 +76,64 @@ window.TokiCompanyUI=()=>{
     return fieldset;
   }
   const chosenGroups=parent=>[...parent.querySelectorAll('input:checked')].map(input=>input.value);
+  function guestChoices(parent,data,guest={}){
+    const groups=groupChoices(data.groups,guest.groupIds);
+    const people=groupChoices(data.people.filter(person=>person.id!==guest.personId),guest.personIds,
+      '個別に閲覧を許可する人','選択できる人はいません。');
+    parent.append(groups,people);
+    return ()=>({groups:chosenGroups(groups),people:chosenGroups(people)});
+  }
+  function clearGuestLink(){
+    $('company-guest-name').value='';$('company-guest-link').value='';
+    $('company-guest-output').hidden=true;$('company-guest-copy-status').textContent='';
+  }
+  $('company-copy-guest').onclick=async()=>{
+    try{await navigator.clipboard.writeText($('company-guest-link').value);$('company-guest-copy-status').textContent='コピーしました。';}
+    catch{$('company-guest-link').select();$('company-guest-copy-status').textContent='選択したリンクをコピーしてください。';}
+  };
+  function renderGuests(data,current){
+    const action=async(kind,params)=>{
+      if(pending||!current()||shared.company.role!=='admin'||!shared.online)return;
+      adminBusy(true);$('company-admin-error').textContent='';
+      try{
+        const result=await shared.guestAdmin(kind,params);
+        if(!current())return;
+        if(result.ticket){
+          if(!/^[0-9a-f]{64}$/.test(result.ticket))throw Error('発行結果を確認できませんでした。');
+          $('company-guest-link').value=shared.guestUrl(result.ticket);
+          $('company-guest-output').hidden=false;$('company-guest-copy-status').textContent='';
+        }else if(kind==='revoke')clearGuestLink();
+        $('company-guest-name').value='';
+        await adminList();
+      }catch(e){if(current())showAdminError(e.message);}
+      finally{adminBusy(false);}
+    };
+    const choose=guestChoices($('company-guest-choices'),data);
+    $('company-guest-form').onsubmit=e=>{
+      e.preventDefault();
+      return action('issue',{p_name:$('company-guest-name').value,p_access:choose()});
+    };
+    for(const guest of data.guests){
+      const row=el('div');row.className='company-member';
+      const status=guest.revoked?'アクセス停止中':'登録端末 '+guest.devices+'台'+(guest.unusedLink?' · 未使用リンクあり':'');
+      row.append(el('strong',guest.name),el('small',status));
+      row.append(button(guest.revoked?'新しい招待リンクを発行':'追加端末のリンクを発行',()=>{
+        if(!guest.unusedLink||confirm('現在の未使用リンクを取り消し、新しい使い切りリンクを発行しますか？'))
+          return action('add_device',{p_guest:guest.id});
+      }));
+      if(!guest.revoked){
+        row.append(button(guest.personId?'全端末のアクセスを停止':'招待を取り消す',()=>{
+          if(confirm(guest.name+'の招待リンクと端末のアクセスを停止しますか？'))return action('revoke',{p_guest:guest.id});
+        }));
+      }
+      const details=el('details');details.className='company-member-settings';
+      details.append(el('summary','閲覧できるグループ・人'));
+      const selection=guestChoices(details,data,guest);
+      details.append(button('閲覧権限を保存',()=>action('set_access',{p_guest:guest.id,p_access:selection()})));
+      row.append(details);$('company-guests').append(row);
+    }
+    $('company-guest-section').hidden=false;
+  }
   function addMemberSettings(row,member,groups,action){
     const settings=el('div');settings.className='company-member-settings';
     if(!member.personId){
@@ -140,12 +199,15 @@ window.TokiCompanyUI=()=>{
   async function adminList(){
     const company=shared.company,d=$('company-dialog');if(!company)return;
     const identity=shared.user.id,generation=++view,current=()=>sameView(company.id,identity,generation);
-    $('company-dialog-title').textContent=company.name;$('company-dialog-code').textContent=company.code;$('company-dialog-user').textContent=shared.user.email;
+    $('company-dialog-title').textContent=company.name;$('company-dialog-code').textContent=company.code||'';$('company-dialog-user').textContent=shared.user.email;
+    $('company-dialog-code-row').hidden=Boolean(shared.guest);
+    $('company-switch').textContent=shared.guest?'Googleログイン画面へ':'組織を切り替える';
+    $('company-dialog-logout').textContent=shared.guest?'この端末のゲスト利用を終了':'ログアウト';
     clearAdmin();$('company-admin-error').textContent='';$('company-admin-status').textContent='権限を確認中…';
     if(!d.open)d.showModal();
     try{
       await shared.listCompanies();if(!current())return;
-      if(shared.company.role!=='admin'){$('company-admin-status').textContent='一般メンバー';return;}
+      if(shared.company.role!=='admin'){$('company-admin-status').textContent=shared.guest?'招待リンクで参加中':'一般メンバー';return;}
       const data=await shared.manage('members');if(!current()||shared.company.role!=='admin')return;
       const scoped=Array.isArray(data.groups);
       const batchEnabled=scoped&&Array.isArray(data.pinInvites);
@@ -186,13 +248,22 @@ window.TokiCompanyUI=()=>{
           button('招待を取り消す',()=>action('cancel_pin_invite',{p_member:invite.id})));
         $('company-unused-pins').append(row);
       }
+      if(scoped&&shared.guestAdmin){
+        try{
+          const guests=await shared.guestAdmin('list');
+          if(current()&&shared.company.role==='admin')renderGuests(guests,current);
+        }catch(e){if(current()&&e.code!=='CONFIG')showAdminError(e.message);}
+      }
     }catch(e){if(current()){$('company-admin-status').textContent='権限を確認できませんでした';showAdminError(e.message);}}
   }
   $('company-button').onclick=adminList;
   $('company-dialog-close').onclick=()=>$('company-dialog').close();
-  $('company-dialog').addEventListener('close',()=>{view++;clearAdmin();clearInvitationForm();$('company-admin-status').textContent='';$('company-admin-error').textContent='';});
+  $('company-dialog').addEventListener('close',()=>{view++;clearAdmin();clearInvitationForm();clearGuestLink();$('company-admin-status').textContent='';$('company-admin-error').textContent='';});
   $('company-switch').onclick=()=>{$('company-dialog').close();shared.leaveView();};
-  $('company-dialog-logout').onclick=()=>{$('company-dialog').close();run(()=>shared.logout());};
+  $('company-dialog-logout').onclick=()=>{
+    if(shared.guest&&!confirm('この端末でゲスト利用を終了しますか？再び開くには新しい招待リンクが必要です。'))return;
+    $('company-dialog').close();return run(()=>shared.logout());
+  };
   $('company-issue-pins').onclick=async()=>{
     const company=shared.company,generation=view,identity=shared.user?.id;
     if(pending||company?.role!=='admin'||!shared.online)return;

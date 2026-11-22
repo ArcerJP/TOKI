@@ -2,6 +2,11 @@
 (() => {
   const local=location.protocol==='file:'||['localhost','127.0.0.1','[::1]'].includes(location.hostname);
   const enabled=!local||new URLSearchParams(location.search).get('mode')==='shared',config=window.TOKI_CONFIG;
+  const guestCode=new URLSearchParams(location.search).get('guest');
+  if(enabled&&guestCode!==null&&window.TokiGuest){
+    window.TokiShared=window.TokiGuest({config,code:guestCode});
+    return;
+  }
   const hooks={},PREFIX='toki-company-v1:',PROFILE=PREFIX+'profile';
   let client,authStorage,user=null,company=null,companies=[],online=false,fetchedAt=null,epoch=0,refreshing=false,initialized=false,retryAt=0;
   const emit=(event,value)=>hooks[event]?.(value),error=(message,code)=>Object.assign(Error(message),{code});
@@ -49,12 +54,12 @@
     fetchedAt=Date.now();write(companyKey(company.id),{userId:user.id,companyId:company.id,board,fetchedAt});
   }
   function networkFailure(failure,status){return !status||status===0||status>=500||/fetch|network|通信/i.test(failure?.message||'');}
-  async function rpc(action,extra={}){
+  async function rpc(action,extra={},endpoint='toki_company'){
     if(!user)throw error(messages.AUTH,'AUTH');
     if(Date.now()<retryAt)throw error(messages.RATE_LIMIT,'RATE_LIMIT');
     if(navigator.onLine===false)throw error(messages.NETWORK,'NETWORK');
     const generation=epoch,identity=user.id;
-    let result;try{result=await client.rpc('toki_company',{p_action:action,...extra});}catch{if(epoch!==generation||user?.id!==identity)throw error(messages.STALE,'STALE');throw error(messages.NETWORK,'NETWORK');}
+    let result;try{result=await client.rpc(endpoint,{p_action:action,...extra});}catch{if(epoch!==generation||user?.id!==identity)throw error(messages.STALE,'STALE');throw error(messages.NETWORK,'NETWORK');}
     if(epoch!==generation||user?.id!==identity)throw error(messages.STALE,'STALE');
     if(result.error){
       const code=Object.hasOwn(messages,result.error.message)?result.error.message:result.status===401?'AUTH':result.status===403?'DENIED':result.status===429?'RATE_LIMIT':result.error.code==='PGRST202'?'CONFIG':networkFailure(result.error,result.status)?'NETWORK':'INVALID';
@@ -232,7 +237,12 @@
   }
   function leaveView(){reset();company=null;state();}
   const shareUrl=()=>config.siteUrl+(company?'#company='+encodeURIComponent(company.code):'');
-  window.TokiShared={enabled,companyAccess:true,initialize,save,changeRoster,refresh,fetchBoard,shareUrl,login,logout,join,selectCompany,listCompanies,manage,leaveView,
+  const guestAdmin=(action,params)=>rpc(action,{p_company:company.id,...params},'toki_guest_admin');
+  const guestUrl=ticket=>{
+    const url=new URL(config.siteUrl);url.searchParams.set('guest',company.code);
+    url.hash=new URLSearchParams({invite:ticket}).toString();return url.href;
+  };
+  window.TokiShared={enabled,companyAccess:true,initialize,save,changeRoster,refresh,fetchBoard,shareUrl,login,logout,join,selectCompany,listCompanies,manage,leaveView,guestAdmin,guestUrl,
     get online(){return online;},get scope(){return scope();},get user(){return profile();},get company(){return company;},get companies(){return companies;},
     get pendingCode(){return new URLSearchParams(location.hash.slice(1)).get('company')||read(PREFIX+'join-code','');}};
 })();

@@ -3,9 +3,10 @@ window.TokiGroupView=({context,change})=>{
   let scope='',selection=new Set(),configured=false,prompted=false;
   const $=id=>document.getElementById(id),key=()=>`toki-view-v1:${scope}:groups`;
   function sync(){
-    const next=context().scope;if(next===scope)return;
+    const ctx=context(),next=ctx.scope;if(next===scope)return;
     scope=next;selection=new Set();configured=false;prompted=false;
     try{const saved=JSON.parse(localStorage.getItem(key()));if(saved?.version===1&&Array.isArray(saved.selected)){selection=new Set(saved.selected.filter(x=>typeof x==='string'));configured=true;}}catch{}
+    if(!configured&&ctx.ready&&ctx.showAll){selection=new Set([...ctx.board.groups.map(group=>group.id),'@unassigned']);configured=true;}
   }
   function visible(id){sync();return selection.has(id);}
   function saveSelection(){configured=true;try{localStorage.setItem(key(),JSON.stringify({version:1,selected:[...selection]}));}catch{}}

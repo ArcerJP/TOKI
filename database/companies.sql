@@ -45,6 +45,30 @@ alter table toki_private.company_members add column if not exists person_id uuid
 alter table toki_private.company_members add column if not exists visible_groups text[] not null default '{}';
 alter table toki_private.company_members add column if not exists request_name text;
 alter table toki_private.company_invites add column if not exists display_name text;
+create table if not exists toki_private.company_guests (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references toki_private.companies(id),
+  display_name text not null,
+  visible_groups text[] not null,
+  visible_people uuid[] not null,
+  person_id uuid,
+  invite_hash bytea unique,
+  invite_claimant_hash bytea,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique(company_id,person_id)
+);
+create index if not exists company_guests_company_idx on toki_private.company_guests(company_id);
+alter table toki_private.company_guests enable row level security;
+revoke all on toki_private.company_guests from public,anon,authenticated;
+create table if not exists toki_private.company_guest_sessions (
+  token_hash bytea primary key,
+  guest_id uuid not null references toki_private.company_guests(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists company_guest_sessions_guest_idx on toki_private.company_guest_sessions(guest_id);
+alter table toki_private.company_guest_sessions enable row level security;
+revoke all on toki_private.company_guest_sessions from public,anon,authenticated;
 create unique index if not exists company_member_person_unique
   on toki_private.company_members(company_id,person_id) where person_id is not null;
 alter table toki_private.company_join_limits enable row level security;
@@ -179,6 +203,8 @@ begin
       and i.expires_at>now() and i.email is distinct from skip_email
     union all
     select i.display_name from toki_private.company_pin_invites i where i.company_id=org and i.disabled_at is null
+    union all
+    select g.display_name from toki_private.company_guests g where g.company_id=org and g.person_id is null and g.invite_hash is not null
   )
   select count(*),coalesce(bool_or(toki_private.name_key(i.display_name)=toki_private.name_key(new_name)
       or exists(select 1 from jsonb_array_elements_text(board->'people') p(name)
@@ -235,7 +261,7 @@ end;
 $$;
 revoke all on function toki_private.checked_visible_groups(jsonb,jsonb),toki_private.issue_company_pins(uuid,jsonb,jsonb) from public,anon,authenticated;
 
-create or replace function toki_private.project_schedule(board jsonb, own_row uuid, allowed_groups text[])
+create or replace function toki_private.project_schedule(board jsonb, own_row uuid, allowed_groups text[], allowed_people uuid[])
 returns jsonb language sql immutable set search_path='' as $$
   with allowed as (
     select g,n from jsonb_array_elements(board->'groups') with ordinality as items(g,n)
@@ -243,7 +269,8 @@ returns jsonb language sql immutable set search_path='' as $$
   ), visible as (
     select r,(n-1)::integer as original,(row_number() over (order by n)-1)::integer as projected
     from jsonb_array_elements(board->'rows') with ordinality as items(r,n)
-    where r->>'id'=own_row::text or exists(select 1 from allowed where g->'members' @> jsonb_build_array(items.n-1))
+    where r->>'id'=own_row::text or (r->>'kind'='person' and (r->>'id')::uuid=any(allowed_people))
+      or exists(select 1 from allowed where g->'members' @> jsonb_build_array(items.n-1))
   )
   select jsonb_build_object(
     'schemaVersion',4,
@@ -264,7 +291,12 @@ returns jsonb language sql immutable set search_path='' as $$
       where exists(select 1 from allowed where g->>'id'=m->>'group') and members<>'[]'),'[]'))
 $$;
 
-create or replace function toki_private.merge_schedule_events(board jsonb, projected jsonb, submitted jsonb, own_row uuid)
+create or replace function toki_private.project_schedule(board jsonb, own_row uuid, allowed_groups text[])
+returns jsonb language sql immutable set search_path='' as $$
+  select toki_private.project_schedule(board,own_row,allowed_groups,'{}'::uuid[])
+$$;
+
+create or replace function toki_private.merge_schedule_events(board jsonb, projected jsonb, submitted jsonb, own_row uuid, edit_places boolean)
 returns jsonb language plpgsql immutable set search_path='' as $$
 declare protected jsonb; submitted_protected jsonb; changes jsonb;
 begin
@@ -279,17 +311,17 @@ begin
   select coalesce(jsonb_agg(e order by e->>'id'),'[]') into protected
     from jsonb_array_elements(projected->'events') e
     cross join lateral (select projected->'rows'->((e->>'person')::integer) r) metadata
-    where r->>'kind'='person' and r->>'id' is distinct from own_row::text;
+    where (not edit_places or r->>'kind'='person') and r->>'id' is distinct from own_row::text;
   select coalesce(jsonb_agg(e order by e->>'id'),'[]') into submitted_protected
     from jsonb_array_elements(submitted->'events') e
     cross join lateral (select projected->'rows'->((e->>'person')::integer) r) metadata
-    where r->>'kind'='person' and r->>'id' is distinct from own_row::text;
+    where (not edit_places or r->>'kind'='person') and r->>'id' is distinct from own_row::text;
   if submitted_protected is distinct from protected then raise exception 'DENIED'; end if;
 
   select coalesce(jsonb_agg(jsonb_set(e,'{person}',to_jsonb(toki_private.schedule_row_index(board,(r->>'id')::uuid)))),'[]') into changes
     from jsonb_array_elements(submitted->'events') e
     cross join lateral (select projected->'rows'->((e->>'person')::integer) r) metadata
-    where r->>'kind'='place' or r->>'id'=own_row::text;
+    where (edit_places and r->>'kind'='place') or r->>'id'=own_row::text;
   if exists(select 1 from jsonb_array_elements(changes) e cross join jsonb_array_elements(board->'meetings') m
     where e->>'date'=m->>'date' and m->'members' @> jsonb_build_array(e->'person')
       and (e->>'start')::integer<(m->>'end')::integer and (e->>'end')::integer>(m->>'start')::integer) then
@@ -298,10 +330,15 @@ begin
   return jsonb_set(board,'{events}',(
     select coalesce(jsonb_agg(e order by n),'[]') from jsonb_array_elements(board->'events') with ordinality as entry(e,n)
     cross join lateral (select board->'rows'->((e->>'person')::integer) r) metadata
-    where r->>'id' is distinct from own_row::text and (r->>'kind'<>'place' or not exists(
+    where r->>'id' is distinct from own_row::text and (not edit_places or r->>'kind'<>'place' or not exists(
       select 1 from jsonb_array_elements(projected->'rows') p where p=r))
     ) || changes);
 end;
+$$;
+
+create or replace function toki_private.merge_schedule_events(board jsonb, projected jsonb, submitted jsonb, own_row uuid)
+returns jsonb language sql immutable set search_path='' as $$
+  select toki_private.merge_schedule_events(board,projected,submitted,own_row,true)
 $$;
 
 create or replace function toki_private.schedule_response(org uuid, board jsonb, revision bigint, role text, own_row uuid, allowed_groups text[])
@@ -316,6 +353,7 @@ revoke all on function toki_private.with_schedule_rows(jsonb),
   toki_private.remove_schedule_row(jsonb,integer), toki_private.checked_schedule_name(text),
   toki_private.check_schedule_invitations(uuid,jsonb,text,text),
   toki_private.project_schedule(jsonb,uuid,text[]), toki_private.merge_schedule_events(jsonb,jsonb,jsonb,uuid),
+  toki_private.project_schedule(jsonb,uuid,text[],uuid[]), toki_private.merge_schedule_events(jsonb,jsonb,jsonb,uuid,boolean),
   toki_private.schedule_response(uuid,jsonb,bigint,text,uuid,text[])
   from public,anon,authenticated;
 
@@ -469,6 +507,11 @@ begin
           where exists(select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id))
           where i.company_id=c.id and i.disabled_at is null and exists(select 1 from unnest(i.visible_groups) id
             where not exists(select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id));
+        update toki_private.company_guests x set visible_groups=array(
+          select id from unnest(x.visible_groups) id
+          where exists(select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id))
+          where x.company_id=c.id and exists(select 1 from unnest(x.visible_groups) id
+            where not exists(select 1 from jsonb_array_elements(b.payload->'groups') g where g->>'id'=id));
       end if;
     end if;
     if c.scoped_schedule then
@@ -530,6 +573,9 @@ begin
         delete from toki_private.company_invites where company_id=c.id and email=(select lower(email) from auth.users where id=target.user_id);
         delete from toki_private.company_members where company_id=c.id and user_id=target.user_id;
       end if;
+      delete from toki_private.company_guests where company_id=c.id and person_id=p_member;
+      update toki_private.company_guests set visible_people=array_remove(visible_people,p_member)
+        where company_id=c.id and p_member=any(visible_people);
       next_board:=toki_private.remove_schedule_row(b.payload,row_index);
     end if;
     update public.toki_boards set payload=next_board where id=b.id returning * into b;

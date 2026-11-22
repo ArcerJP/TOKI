@@ -5,12 +5,12 @@ const S=require('../src/core/schedule.js');
 const date='2026-10-05';
 const seed=()=>S.reserve({schemaVersion:4,people:['A','B','C','D'],groups:[{id:'a',name:'局A',members:[0,1]},{id:'b',name:'局B',members:[1,2]}],events:[0,1,2].map(person=>({id:'e'+person,person,date,start:540,end:1080})),meetings:[]},'a',date,[{start:780,end:840}]);
 const flush=()=>new Promise(resolve=>setTimeout(resolve,40));
-async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false,launchDate=date}={}){
+async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false,guest=false,launchDate=date}={}){
   const errors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',e=>errors.push(e));
   const dom=new JSDOM(fs.readFileSync(sourcePath('index.html'),'utf8'),{url:'https://example.test/TOKI/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
   const w=dom.window,d=w.document,media=[];let board=seed(),version=1,hooks,online=true,saves=0,failSave=false;
   w.Date=class extends w.Date {constructor(...args){super(...(args.length?args:[launchDate+'T12:00:00']));}};
-  const access=scoped?{role:'member',personId:'00000000-0000-4000-8000-000000000001'}:undefined;
+  const access=scoped?{role:guest?'guest':'member',personId:'00000000-0000-4000-8000-000000000001'}:undefined;
   if(scoped)board.rows=board.people.map((_,i)=>({id:'00000000-0000-4000-8000-00000000000'+(i+1),kind:i===1?'place':'person'}));
   board.groups[0].id=groupId;board.meetings.filter(m=>m.group==='a').forEach(m=>m.group=groupId);
   w.scrollTo=()=>{};w.confirm=()=>{throw Error('Unexpected browser confirmation');};
@@ -24,7 +24,7 @@ async function environment(t,{width=390,coarse=false,shared=false,preselect=true
   w.TOKI_CONFIG={boardId:'test-board'};w.TOKI_DATA={people:[],dates:[date],availability:[]};w.TOKI_DATA_READY=Promise.resolve();
   w.localStorage.setItem('toki-selected-date','2026-10-11');w.localStorage.setItem('toki-availability-v3',JSON.stringify({version:3,board}));
   if(preselect)w.localStorage.setItem('toki-view-v1:'+(shared?'shared':'local')+':groups',JSON.stringify({version:1,selected:[groupId,'b','@unassigned']}));
-  w.TokiShared={enabled:shared,get online(){return online;},shareUrl:()=>'',initialize:async h=>{hooks=h;h.board({version,payload:board,access});},save:async next=>{if(failSave)throw Error('試験：保存失敗');saves++;board=structuredClone(next);return {version:++version,payload:board,access};},refresh:async()=>{}};
+  w.TokiShared={enabled:shared,guest,get online(){return online;},shareUrl:()=>'',initialize:async h=>{hooks=h;h.board({version,payload:board,access});},save:async next=>{if(failSave)throw Error('試験：保存失敗');saves++;board=structuredClone(next);return {version:++version,payload:board,access};},refresh:async()=>{}};
   for(const name of ['model','availability','schedule','availability-ui','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-ui','group-view','company-ui','app'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
   await flush();await flush();
   t.after(()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[]);});
@@ -36,6 +36,24 @@ async function environment(t,{width=390,coarse=false,shared=false,preselect=true
   function pointer(type,minute,id=1,extra={}){const track=d.querySelector('.mob-editor-track'),e=new w.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientY:(minute-480)*1.6,clientX:160});Object.assign(e,{pointerId:id,isPrimary:true,...extra});track.dispatchEvent(e);}
   return {w,d,$,click,button,select,pointer,copies,current,get saves(){return saves;},get error(){return d.querySelector('.mob-error')?.textContent;},async resetAccount(){hooks.reset();await flush();},async switchScope(scope){hooks.reset();w.TokiShared.scope=scope;hooks.board({version,payload:board});await flush();},async resize(newWidth,newCoarse=coarse){width=newWidth;coarse=newCoarse;media.forEach(entry=>{entry.matches=entry.media.includes('767')?width<=767:width<=1023&&coarse;entry.listeners.forEach(fn=>fn());});await flush();},async offline(value=true){online=!value;hooks.state({online,fetchedAt:Date.now()});await flush();},async remoteUpdate(){board=structuredClone(board);board.people[0]='A更新';hooks.board({version:++version,payload:board});await flush();},async localUpdate(){const value=structuredClone(current());value.people[0]='A更新';const text=JSON.stringify({version:3,board:value});w.localStorage.setItem('toki-availability-v3',text);w.dispatchEvent(new w.StorageEvent('storage',{key:'toki-availability-v3',newValue:text}));await flush();},fail(){failSave=true;}};
 }
+
+test('guest starts with granted groups visible and cannot edit a shared place',async t=>{
+  const e=await environment(t,{shared:true,scoped:true,guest:true,preselect:false});
+  assert.equal(e.$('group-view-dialog').open,false);
+  assert.equal(e.$('copy-link').hidden,true);
+  assert.equal(e.$('add-person').hidden,true);
+  assert.equal(e.$('chart').querySelectorAll('.group-row').length,2);
+  assert.equal(e.$('mobile-app').querySelector('button[aria-label="メンバー"]'),null);
+  await e.click('局Aのメンバー表示');
+  await e.click('Bの時間を編集');
+  assert.equal(e.button('保存').disabled,true);
+  await e.click('閉じる');
+  await e.click('Aの時間を編集');
+  await e.select('編集する時間','range:0');
+  await e.click('開始を30分遅らせる');
+  await e.click('保存');
+  assert.equal(e.saves,1);
+});
 
 test('a valid group ID named __proto__ remains ordinary persisted exclusion data',async t=>{
   const e=await environment(t,{groupId:'__proto__'}),before=JSON.stringify(e.current());

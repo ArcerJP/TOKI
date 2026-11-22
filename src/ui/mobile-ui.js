@@ -90,6 +90,7 @@ window.TokiMobileUI = function (bridge) {
       const list=el('ul');for(const text of ['一覧・表はスクロールして閲覧。予定は「編集」から変更します。','編集画面では、まず時間を選択。±30分のボタンでも調整できます。「保存」まで予定は変わりません。','タイムラインは「スクロール」が標準。「範囲選択・開始・終了・移動」を選ぶとドラッグで調整できます。','グループの可能時間は対象者の共通時間。MTGは登録済みの対象者全員の可能時間内で調整します。','対象から外した人は取り消し線で表示。既存のMTGの対象者は変わりません。','MTGの「⋯」から削除・時間のコピー。削除すると可能時間を復元します。','表示グループ・一時除外はこの端末だけに保存します。オフラインの共有予定は閲覧のみです。'])list.append(el('li',null,text));help.append(list);content.append(help);
     }
     nav.replaceChildren();for(const [id,name] of [['schedule','予定'],['members','メンバー'],['export','書き出し'],['more','その他']]){
+      if(id==='members'&&!bridge.canManagePlaces())continue;
       const b=button('',()=>{page=id;full=false;root.classList.remove('mob-full');window.scrollTo(0,0);render();},name);b.append(navIcon(id),el('span',null,name));b.setAttribute('aria-current',id===page?'page':'false');nav.append(b);
     }
     if(active)Array.from(root.querySelectorAll('button')).find(b=>b.getAttribute('aria-label')===active)?.focus({preventScroll:true});

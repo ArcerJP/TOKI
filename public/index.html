@@ -23,6 +23,7 @@
     <script src="security.js"></script>
     <script src="config.js" defer></script>
     <script src="auth-storage.js" defer></script>
+    <script src="guest.js" defer></script>
     <script src="shared.js" defer></script>
     <script src="data.js" defer></script>
     <script src="model.js" defer></script>
@@ -468,7 +469,7 @@
     </dialog>
     <dialog id="company-dialog" aria-labelledby="company-dialog-title">
       <div class="dialog-heading"><h2 id="company-dialog-title">組織・アカウント</h2><button id="company-dialog-close" aria-label="組織設定を閉じる">×</button></div>
-      <p id="company-dialog-user"></p><p>組織コード：<strong id="company-dialog-code" class="company-code"></strong></p>
+      <p id="company-dialog-user"></p><p id="company-dialog-code-row">組織コード：<strong id="company-dialog-code" class="company-code"></strong></p>
       <div class="company-actions"><button id="company-switch">組織を切り替える</button><button id="company-dialog-logout">ログアウト</button></div>
       <p class="import-help">ログアウトすると、この利用者の端末に保存した予定を消去します。アクセス停止後も、オフライン端末の保存済みデータは即時には消去できません。</p>
       <p id="company-admin-status" role="status"></p>
@@ -498,6 +499,22 @@
           <label id="company-invite-name-label" for="company-invite-name" hidden>予定表の表示名</label><input id="company-invite-name" maxlength="40" autocomplete="off" hidden />
           <button id="company-invite-button">招待を登録</button></div></section>
         <div id="company-invites"></div>
+        <section id="company-guest-section" hidden>
+          <h3>ログイン不要のゲスト招待</h3>
+          <form id="company-guest-form" class="company-form">
+            <label for="company-guest-name">予定表の表示名</label>
+            <input id="company-guest-name" maxlength="40" autocomplete="off" required>
+            <div id="company-guest-choices"></div>
+            <button type="submit">ゲスト招待リンクを発行</button>
+          </form>
+          <div id="company-guest-output" hidden>
+            <label for="company-guest-link">発行した招待リンク</label>
+            <textarea id="company-guest-link" rows="3" readonly></textarea>
+            <button type="button" id="company-copy-guest">招待リンクをコピー</button>
+            <span id="company-guest-copy-status" role="status"></span>
+          </div>
+          <div id="company-guests"></div>
+        </section>
       </fieldset></section>
     </dialog>
     <dialog id="google-import-dialog" aria-labelledby="google-import-title">

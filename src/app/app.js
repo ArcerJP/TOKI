@@ -11,7 +11,7 @@
   $("schedule-app").hidden=shared.enabled;
   $("auth-gate").hidden=true;
   $("app-loading").hidden=!initializing;
-  $("copy-link").hidden=!shared.enabled;
+  $("copy-link").hidden=!shared.enabled||Boolean(shared.guest);
   if(shared.enabled)$("storage-note").textContent="参加を許可された組織のメンバーが予定を閲覧・編集できます。変更は約5秒ごとに同期します。オフラインでは保存済みの予定を閲覧できます。";
   const START=480, END=1440, SPAN=END-START, KEY="toki-availability-v3",LEGACY_KEY="toki-availability-2026-v1";
   const colors=["#2b7558","#367f88","#526ab1","#896899"];
@@ -29,11 +29,12 @@
   };
   const canManage=()=>!access||access.role==='admin';
   const isPlace=person=>rowMetadata?.[person]?.kind==='place';
-  const ownPerson=()=>access?.role==='member'&&access.personId
+  const ownPerson=()=>['member','guest'].includes(access?.role)&&access.personId
     ?rowMetadata.findIndex(row=>row.id===access.personId):-1;
-  const canEditPerson=person=>canManage()||person===ownPerson()||isPlace(person);
+  const canManagePlaces=()=>access?.role!=='guest';
+  const canEditPerson=person=>canManage()||person===ownPerson()||(canManagePlaces()&&isPlace(person));
   const canEditRow=key=>key.startsWith('g:')?canManage():canEditPerson(Number(key.slice(2)));
-  const canAddPlace=()=>!access||canManage()||groups.length>0;
+  const canAddPlace=()=>canManagePlaces()&&(!access||canManage()||groups.length>0);
   const canImport=()=>people.some((_,person)=>!isPlace(person)&&canEditPerson(person));
   const dialogOpen=()=>Boolean(document.querySelector("dialog[open]"));
   const viewScope=()=>shared.enabled?(shared.scope||'shared'):'local';
@@ -65,7 +66,8 @@
     for(const id of ['add-person','add-group','remove-row','confirm-remove','detach-place'])$(id).disabled=disabled;
     $('add-person').textContent=access?'＋ 場所・外部予定を追加':'＋ 人を追加';
     $('add-person').disabled=disabled||!canAddPlace();
-    $('place-help').hidden=!access;
+    $('add-person').hidden=!canManagePlaces();
+    $('place-help').hidden=!access||!canManagePlaces();
     $('add-group').hidden=!canManage();
     $("roster-form").querySelector('button[type="submit"]').disabled=disabled;
     $("meeting-dialog").querySelectorAll('.release-member').forEach(button=>button.disabled=disabled);
@@ -110,8 +112,8 @@
     if(!M.valid(payload)){$("auth-message").textContent="共有データの形式を確認できません。再読み込みしてください。";$("auth-retry").hidden=false;return;}
     const changed=revision!==null;
     const nextAccess=board.access??null;
-    const revoked=changed&&nextAccess?.role==='member'&&
-      (access?.role!=='member'||access.personId!==nextAccess.personId||
+    const revoked=changed&&['member','guest'].includes(nextAccess?.role)&&
+      (access?.role!==nextAccess.role||access.personId!==nextAccess.personId||
         groups.some(group=>!payload.groups.some(next=>next.id===group.id))||
         rowMetadata?.some(row=>!payload.rows.some(next=>next.id===row.id)));
     if(revoked)resetView();
@@ -213,7 +215,7 @@
       if(interactive&&canManage()){const handle=el('button','row-drag-handle','⋮⋮');handle.type='button';handle.setAttribute('aria-label',name+(group?'のグループを移動':'の行を移動'));handle.title='ドラッグで移動／上下キーで並べ替え';nameCell.append(handle);}
       if(group&&interactive){const toggle=el('button','group-toggle',collapsed.has(group.id)?'▸':'▾');toggle.type='button';toggle.setAttribute('aria-expanded',String(!collapsed.has(group.id)));toggle.setAttribute('aria-label',group.name+(collapsed.has(group.id)?'を展開':'を折りたたむ'));toggle.onclick=()=>{if(drag||rowDrag?.active)return;if(collapsed.has(group.id))collapsed.delete(group.id);else collapsed.add(group.id);try{localStorage.setItem(prefKey('collapsed'),JSON.stringify([...collapsed]));}catch{}render();};nameCell.append(toggle);}
       else nameCell.append(el('span','person-dot'));
-      const canOpenRoster=interactive&&(canManage()||isPlace(person));
+      const canOpenRoster=interactive&&(canManage()||(canManagePlaces()&&isPlace(person)));
       const nameLabel=el(canOpenRoster?'button':'span','row-name',name);
       if(canOpenRoster){nameLabel.type='button';nameLabel.title=name+'を編集・削除';nameLabel.setAttribute('aria-label',name+'を編集・削除');nameLabel.onclick=()=>openRoster(group?'group':isPlace(person)?'place':'person',group?group.id:person,context);}
       nameCell.append(nameLabel);
@@ -246,7 +248,7 @@
       row.append(nameCell,track);chart.append(row);
     });
     if(interactive&&!rows.length){const empty=el('p','group-view-empty','表示するグループがありません。「表示グループ」から選択してください。');chart.append(empty);}
-    if(interactive){const add=el('div','bottom-add-row'),button=el('button','bottom-add',access?'＋ 場所・外部予定を追加':'＋ 人を追加');button.type='button';button.onclick=()=>openRoster(access?'place':'person',null);add.append(button);chart.append(add);}
+    if(interactive&&canManagePlaces()){const add=el('div','bottom-add-row'),button=el('button','bottom-add',access?'＋ 場所・外部予定を追加':'＋ 人を追加');button.type='button';button.onclick=()=>openRoster(access?'place':'person',null);add.append(button);chart.append(add);}
     return chart;
   }
   function render(){if(rowDrag?.active)return;document.querySelector(".member-count").textContent=`${people.length}人 · ${groups.length}グループ`;const scroll=$("chart-scroll"),x=scroll.scrollLeft,y=scroll.scrollTop;$("chart").replaceWith(Object.assign(chartFor(selected),{id:"chart"}));scroll.scrollLeft=x;scroll.scrollTop=y;renderDates();setBusy(busy);const list=events.filter(e=>e.date===selected);$("day-summary").textContent=`${new Set(list.filter(e=>e.person!==undefined).map(e=>e.person)).size}/${people.length}人 · ${list.length}枠`;groupView?.refresh();}
@@ -366,7 +368,7 @@
   function openRoster(kind,id,context=null){
     if(!editable())return;
     if(access&&kind==='person'&&(id===null||!canManage()))return;
-    if(kind==='group'&&!canManage()||kind==='place'&&(id===null?!canAddPlace():!isPlace(id)))return;
+    if(kind==='group'&&!canManage()||kind==='place'&&(!canManagePlaces()||(id===null?!canAddPlace():!isPlace(id))))return;
     rosterKind=kind;rosterId=id;rosterContext=context;
     const group=kind==='group'?groups.find(g=>g.id===id):null;
     const label=kind==='group'?'グループ':kind==='place'?'場所・外部予定':'人';
@@ -482,13 +484,13 @@
       return false;
     }
   });
-  groupView=window.TokiGroupView({context:()=>({scope:viewScope(),board:snapshot(),ready}),change:render});
+  groupView=window.TokiGroupView({context:()=>({scope:viewScope(),board:snapshot(),ready,showAll:Boolean(shared.guest)}),change:render});
   companyUI=window.TokiCompanyUI();
   mobile=window.TokiMobileUI({
     context:()=>({board:snapshot(),date:selected,ready,busy,writable:editable(),pending:Boolean(pendingBoard||pendingLocalBoard),fingerprint:JSON.stringify(snapshot())}),
     interacting:()=>Boolean(drag||rowDrag?.active),
     selectDate,openDatePicker,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
-    scoped:()=>Boolean(access),canManage,canEditRow,canAddPlace,ownPerson,isPlace,
+    scoped:()=>Boolean(access),canManage,canEditRow,canAddPlace,canManagePlaces,ownPerson,isPlace,
     visibleGroup:id=>groupView.visible(id),openGroupView:()=>groupView.open(),
     commit:async(next,message,fingerprint)=>{
       if(pendingBoard||pendingLocalBoard||JSON.stringify(snapshot())!==fingerprint)throw Error('予定表が更新されました。画面を閉じ、最新の予定から編集してください。');
