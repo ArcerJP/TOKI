@@ -36,6 +36,29 @@ function environment(t){
   return {w,$,shared,calls,members,ui,set roleChange(v){roleChange=v;},set roleFailure(v){roleFailure=v;},set removal(v){removal=v;},set listFailure(v){listFailure=v;},set listRole(v){listRole=v;},open:()=>$('company-button').onclick(),memberButton(email,label){const row=[...$('company-members').children].find(r=>r.querySelector('span').textContent===email);return [...row.querySelectorAll('button')].find(b=>b.textContent===label);}};
 }
 
+test('the sign-in gate hides the join form, preserves an incoming link, and lists organizations first',async t=>{
+  const e=environment(t),user=e.shared.user,code='A'.repeat(32);
+  let loginCode;
+  e.$('auth-gate').hidden=false;
+  e.shared.user=null;e.shared.company=null;e.shared.pendingCode=code;
+  e.shared.login=async value=>{loginCode=value;};
+  e.ui.render();
+  assert.equal(e.$('company-login').hidden,false);
+  assert.equal(e.$('company-code').closest('[hidden]').id,'company-signed-in');
+  assert.equal(e.$('company-code').value,'');
+  await e.$('company-login').onclick();
+  assert.equal(loginCode,code);
+
+  e.shared.user=user;
+  e.shared.companies=[{id:'test',name:'Test organization',status:'active'}];
+  e.ui.render();
+  assert.equal(e.$('company-login').hidden,true);
+  assert.equal(e.$('company-code').closest('[hidden]'),null);
+  assert.equal(e.$('company-code').value,code);
+  assert.match(e.$('company-list').textContent,/Test organization/);
+  assert.ok(e.$('company-list').compareDocumentPosition(e.$('company-code'))&e.w.Node.DOCUMENT_POSITION_FOLLOWING);
+});
+
 test('join screen requires exactly one entry method and submits the corresponding input',async t=>{
   const e=environment(t),submissions=[];
   e.shared.join=async (code,options)=>submissions.push({code,...options});

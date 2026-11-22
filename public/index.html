@@ -61,29 +61,29 @@
         <button id="auth-update-app" hidden>最新版に更新</button>
         <p id="auth-pwa-status" role="status" hidden></p>
         <div id="company-access" hidden>
-          <div class="company-form">
-            <label for="company-code">組織コード</label>
-            <input id="company-code" autocomplete="off" maxlength="64" placeholder="管理者から届いたコード" />
-            <button id="company-login" class="primary">Googleでログイン</button>
-            <fieldset id="company-entry" hidden>
-              <legend>参加方法</legend>
-              <label><input type="radio" name="company-entry-mode" value="invite"> 招待パスワードで参加</label>
-              <label><input type="radio" name="company-entry-mode" value="apply"> 氏名を入力して参加申請</label>
-              <div id="company-entry-password-field" hidden>
-                <label for="company-entry-password">招待パスワード</label>
-                <input id="company-entry-password" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" />
-              </div>
-              <div id="company-entry-name-field" hidden>
-                <label for="company-entry-name">氏名</label>
-                <input id="company-entry-name" type="text" maxlength="40" autocomplete="name" />
-                <small>組織の管理者に氏名とGoogleメールアドレスを通知します。</small>
-              </div>
-              <button id="company-join" class="primary" type="button" disabled>次へ</button>
-            </fieldset>
-          </div>
+          <button id="company-login" class="primary">Googleでログイン</button>
           <div id="company-signed-in" hidden>
             <p id="company-current-user"></p>
             <div id="company-list"></div>
+            <div class="company-form">
+              <label for="company-code">組織コード</label>
+              <input id="company-code" autocomplete="off" maxlength="64" placeholder="管理者から届いたコード" />
+              <fieldset id="company-entry" hidden>
+                <legend>参加方法</legend>
+                <label><input type="radio" name="company-entry-mode" value="invite"> 招待パスワードで参加</label>
+                <label><input type="radio" name="company-entry-mode" value="apply"> 氏名を入力して参加申請</label>
+                <div id="company-entry-password-field" hidden>
+                  <label for="company-entry-password">招待パスワード</label>
+                  <input id="company-entry-password" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" />
+                </div>
+                <div id="company-entry-name-field" hidden>
+                  <label for="company-entry-name">氏名</label>
+                  <input id="company-entry-name" type="text" maxlength="40" autocomplete="name" />
+                  <small>組織の管理者に氏名とGoogleメールアドレスを通知します。</small>
+                </div>
+                <button id="company-join" class="primary" type="button" disabled>次へ</button>
+              </fieldset>
+            </div>
             <div class="company-actions"><button id="company-refresh">承認状況を更新</button><button id="company-logout">ログアウト</button></div>
             <p>組織の新規作成は運営者にご依頼ください。</p>
           </div>

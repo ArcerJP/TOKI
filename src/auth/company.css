@@ -4,6 +4,7 @@
 .company-form label { font-weight:600; }
 .company-form input { min-width:0; width:100%; }
 .company-form button, .company-actions button { min-height:44px; }
+#company-login { width:100%; min-height:44px; margin-block:18px; }
 #company-entry { margin:0; min-width:0; padding:10px; border:1px solid var(--line); border-radius:8px; }
 #company-entry > label { display:flex; align-items:center; gap:8px; min-height:44px; font-weight:500; }
 #company-entry input[type="radio"] { width:20px; height:20px; flex:none; accent-color:var(--green); }

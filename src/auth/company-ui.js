@@ -21,14 +21,13 @@ window.TokiCompanyUI=()=>{
     $('company-current-user').textContent=user?.email||'';
     if((user?.id??null)!==entryUser){
       entryUser=user?.id??null;
-      $('company-entry-password').value='';$('company-entry-name').value='';
+      $('company-code').value='';$('company-entry-password').value='';$('company-entry-name').value='';
       $('company-entry').querySelectorAll('input[type="radio"]').forEach(radio=>{radio.checked=false;});
     }
     $('company-button').hidden=!company;$('company-button').title=company?'組織・アカウント（'+company.name+'）':'組織・アカウント';
     if(company?.role!=='admin')clearAdmin();
     if(!company)$('company-admin-status').textContent='';
     $('company-entry').hidden=!user;$('company-entry').disabled=pending;$('company-code').disabled=pending;
-    if(!user&&!$('company-code').value)$('company-code').value=shared.pendingCode;
     if(user&&!$('company-code').value&&shared.pendingCode)$('company-code').value=shared.pendingCode;
     updateEntry();
     const signature=JSON.stringify([user?.id,company?.id,list,pending]);if(last===signature)return;last=signature;
@@ -42,7 +41,7 @@ window.TokiCompanyUI=()=>{
     if(user&&!company)$('auth-message').textContent=list.some(c=>c.status==='active')?'開く組織を選んでください。':'組織コードで参加申請するか、管理者からの招待をご確認ください。';
     else if(!user)$('auth-message').textContent='Googleで本人確認後、招待・承認済みの組織だけにアクセスできます。';
   }
-  $('company-login').onclick=()=>run(()=>shared.login($('company-code').value));
+  $('company-login').onclick=()=>run(()=>shared.login(shared.pendingCode));
   $('company-code').oninput=updateEntry;
   $('company-entry').onchange=updateEntry;
   for(const id of ['company-entry-password','company-entry-name'])$(id).oninput=updateEntry;
