@@ -82,12 +82,13 @@ html:not([data-toki-top-level]){display:none!important}
 .schedule-toolbar .member-count { white-space:nowrap; }
 .schedule-toolbar .date-picker-trigger { min-width:0; white-space:nowrap; }
 .schedule-toolbar #desktop-entry-person { max-width:220px; min-height:38px; border:1px solid var(--line); border-radius:7px; padding:5px 8px; }
+.schedule-view-switch-row { display:flex; flex-basis:100%; }
 .schedule-view-switch { display:flex; gap:2px; padding:3px; border:1px solid #d7e5dd; border-radius:10px; background:#e9f0ec; }
 .schedule-view-switch button { border:0; background:transparent; font-size:13px; font-weight:600; }
 .schedule-view-switch button[aria-pressed="true"] { background:#1b5948; color:#fff; }
 #desktop-entry { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-#desktop-entry .mob-month { height:calc(100dvh - 154px); min-height:315px; }
-html:not(.schedule-fullscreen) #chart-scroll { max-height:calc(100dvh - 155px); }
+#desktop-entry .mob-month { height:calc(100dvh - 202px); min-height:315px; }
+html:not(.schedule-fullscreen) #chart-scroll { max-height:calc(100dvh - 203px); }
 .bulk-options label { display:grid; grid-template-columns:20px minmax(0,1fr); align-items:start; gap:7px; margin:0; padding:8px; white-space:nowrap; }
 .bulk-options input[type="checkbox"] { width:18px; height:18px; margin:0; accent-color:var(--green); }
 .bulk-exclude > summary::before,#bulk-exclude > summary::before { content:'▸'; }
