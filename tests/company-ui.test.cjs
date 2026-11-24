@@ -55,8 +55,33 @@ test('the sign-in gate hides the join form, preserves an incoming link, and list
   assert.equal(e.$('company-login').hidden,true);
   assert.equal(e.$('company-code').closest('[hidden]'),null);
   assert.equal(e.$('company-code').value,code);
+  assert.equal(e.$('company-add').open,true);
   assert.match(e.$('company-list').textContent,/Test organization/);
   assert.ok(e.$('company-list').compareDocumentPosition(e.$('company-code'))&e.w.Node.DOCUMENT_POSITION_FOLLOWING);
+});
+
+test('organization chooser lists only joined organizations and keeps the join controls in a closed disclosure',async t=>{
+  const e=environment(t);e.shared.company=null;
+  e.shared.companies=[{id:'waiting',name:'Waiting organization',status:'pending'},
+    {id:'joined',name:'Joined organization',status:'active'},{id:'other',name:'Other organization',status:'active'}];
+  const openings=[];e.shared.selectCompany=async id=>openings.push(id);
+  e.ui.render();
+  assert.equal(e.$('company-current-user').textContent,'ログイン中：current@example.test');
+  assert.equal(e.$('auth-message').textContent,'');
+  const section=e.$('company-signed-in'),[session,joined,add,support]=section.children;
+  assert.equal(session.querySelector('button'),e.$('company-logout'));
+  assert.equal(joined.querySelector('h2').textContent,'参加中の組織');
+  assert.deepEqual([...joined.querySelectorAll('strong')].map(row=>row.textContent),['Joined organization','Other organization']);
+  assert.equal(add.open,false);
+  assert.match(add.textContent,/Waiting organization管理者の承認待ち/);
+  assert.equal(add.querySelector('#company-refresh').textContent,'参加状況を更新');
+  assert.equal(add.querySelector('#company-code'),e.$('company-code'));
+  await joined.querySelector('button').onclick();assert.deepEqual(openings,['joined']);
+  await e.$('company-refresh').onclick();assert.deepEqual(e.calls,[['list']]);
+  const contact=new URL(support.querySelector('a').href);
+  assert.equal(contact.origin,'https://mail.google.com');assert.equal(contact.searchParams.get('to'),'toki.arcer.jp@gmail.com');
+  e.shared.pendingCode='B'.repeat(32);e.ui.render();assert.equal(add.open,true);
+  add.open=false;e.ui.render();assert.equal(add.open,false);
 });
 
 test('join screen requires exactly one entry method and submits the corresponding input',async t=>{

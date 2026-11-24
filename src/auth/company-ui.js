@@ -18,9 +18,10 @@ window.TokiCompanyUI=()=>{
     if(!shared.enabled||!shared.companyAccess)return;
     const user=shared.user,company=shared.company,list=shared.companies;
     $('company-access').hidden=false;$('company-login').hidden=Boolean(user);$('company-signed-in').hidden=!user;
-    $('company-current-user').textContent=user?.email||'';
+    $('company-current-user').textContent=user?.email?'ログイン中：'+user.email:'';
     if((user?.id??null)!==entryUser){
       entryUser=user?.id??null;
+      $('company-add').open=false;
       $('company-code').value='';$('company-entry-password').value='';$('company-entry-name').value='';
       $('company-entry').querySelectorAll('input[type="radio"]').forEach(radio=>{radio.checked=false;});
     }
@@ -28,17 +29,26 @@ window.TokiCompanyUI=()=>{
     if(company?.role!=='admin')clearAdmin();
     if(!company)$('company-admin-status').textContent='';
     $('company-entry').hidden=!user;$('company-entry').disabled=pending;$('company-code').disabled=pending;
-    if(user&&!$('company-code').value&&shared.pendingCode)$('company-code').value=shared.pendingCode;
+    if(user&&!$('company-code').value&&shared.pendingCode){
+      $('company-code').value=shared.pendingCode;
+      $('company-add').open=true;
+    }
     updateEntry();
     const signature=JSON.stringify([user?.id,company?.id,list,pending]);if(last===signature)return;last=signature;
-    const container=$('company-list');container.replaceChildren();
-    for(const c of list){const row=el('div');row.className='company-choice';row.append(el('strong',c.name));
-      if(c.status==='active')row.append(button('予定表を開く',()=>run(()=>shared.selectCompany(c.id))));
-      else row.append(el('span',c.status==='pending'?'管理者の承認待ち':'参加が許可されていません'));
-      container.append(row);
+    const joined=$('company-list'),requests=$('company-entry-status');joined.replaceChildren();requests.replaceChildren();
+    for(const c of list){
+      const row=el('div');row.className='company-choice';row.append(el('strong',c.name));
+      if(c.status==='active'){
+        row.append(button('予定を開く',()=>run(()=>shared.selectCompany(c.id))));
+        joined.append(row);
+      }else{
+        row.append(el('span',c.status==='pending'?'管理者の承認待ち':'参加が許可されていません'));
+        requests.append(row);
+      }
     }
+    if(!joined.childElementCount)joined.append(el('p','参加中の組織はありません。'));
     $('company-login').disabled=pending;
-    if(user&&!company)$('auth-message').textContent=list.some(c=>c.status==='active')?'開く組織を選んでください。':'組織コードで参加申請するか、管理者からの招待をご確認ください。';
+    if(user&&!company)$('auth-message').textContent='';
     else if(!user)$('auth-message').textContent='Googleで本人確認後、招待・承認済みの組織だけにアクセスできます。';
   }
   $('company-login').onclick=()=>run(()=>shared.login(shared.pendingCode));

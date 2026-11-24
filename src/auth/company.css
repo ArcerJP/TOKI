@@ -51,6 +51,19 @@
 .auth-gate { overflow:auto; }
 .auth-card { width:min(100%,520px); }
 .auth-card #auth-message { color:#607870; }
+.auth-card #auth-message:empty, .auth-card #company-error:empty { margin:0; }
+.auth-card .company-session button, .auth-card .company-choice button { min-height:44px; }
+.auth-card .company-choice { flex-wrap:nowrap; gap:8px; padding-block:8px; }
+.auth-card .company-choice strong { flex:1; min-width:0; }
+.auth-card .company-choice button { flex:none; white-space:nowrap; }
+.company-joined { margin-block:18px; }
+.company-joined h2 { margin:0 0 4px; font-size:16px; }
+.company-joined #company-list { padding-inline-start:12px; }
+#company-add { padding:0 12px; }
+#company-add > summary { min-height:44px; padding-block:10px; }
+#company-add .company-form { margin-block:8px 0; }
+.company-support a { color:var(--green); overflow-wrap:anywhere; }
+@media (max-width:420px) { .auth-gate { padding:16px; } .auth-card { padding:24px; } }
 @media (max-width:767px) { #company-dialog, #group-view-dialog { width:calc(100% - 24px); max-height:calc(100dvh - 24px); padding:20px; } .company-choice { flex-wrap:wrap; } }
 #company-dialog { --account-pad:18px; padding:0 var(--account-pad) var(--account-pad); width:min(640px,calc(100vw - 20px)); }
 #company-dialog .company-dialog-heading { position:sticky; z-index:4; top:0; padding:10px var(--account-pad); margin:0 calc(-1 * var(--account-pad)) 10px; background:#fff; border-bottom:1px solid #e6eeea; }
