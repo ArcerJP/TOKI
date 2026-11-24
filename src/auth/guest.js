@@ -113,6 +113,9 @@ window.TokiGuest = ({config,code}) => {
       write(sessionStorage,pendingKey,pending);
     }else if(isToken(saved?.invite)&&isToken(saved.token))pending=saved;
     await refresh();
+    const linkError=read(sessionStorage,'toki-guest-google-error-v1');
+    remove(sessionStorage,'toki-guest-google-error-v1');
+    if(typeof linkError==='string'&&linkError.length<200)emit('warning',linkError);
     setInterval(()=>{if(!document.hidden&&(token||pending))refresh();},5000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden&&(token||pending))refresh();});
     window.addEventListener('online',refresh);
@@ -128,6 +131,13 @@ window.TokiGuest = ({config,code}) => {
     catch(failure){if(failure.code==='GUEST_ACCESS'){clearCurrent(token);connection(false);emit('error',failure);}throw failure;}
   }
   const mainPage=()=>location.assign(config.siteUrl);
+  function linkGoogle(calendar=false){
+    if(!online||!isToken(token))throw error('NETWORK');
+    const intent={code,token,calendar:Boolean(calendar),expiresAt:Date.now()+10*60000};
+    if(!write(sessionStorage,'toki-guest-google-link-v1',intent))throw Error('この端末のセッションに連携情報を保存できません。');
+    const next=new URL(config.siteUrl);
+    next.searchParams.set('start-guest-google','1');location.assign(next);
+  }
   async function logout(){
     const credential=token;
     clearCurrent(credential);pending=null;remove(sessionStorage,pendingKey);
@@ -135,7 +145,7 @@ window.TokiGuest = ({config,code}) => {
     mainPage();
   }
   return {
-    enabled:true,companyAccess:true,guest:true,initialize,save,refresh,logout,leaveView:mainPage,login:mainPage,
+    enabled:true,companyAccess:true,guest:true,initialize,save,refresh,logout,leaveView:mainPage,login:mainPage,linkGoogle,
     listCompanies:async()=>active?[organization()]:[],shareUrl:()=>'',pendingCode:'',
     get scope(){return scope();},get online(){return online;},get user(){return profile();},get company(){return organization();},
     get companies(){return active?[organization()]:[];}

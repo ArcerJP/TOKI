@@ -32,6 +32,28 @@ test('groups show the exact intersection and local exclusions do not alter store
   const b=base();assert.deepEqual(S.ranges(b,'g:g',date),[r(720,960)]);assert.deepEqual(S.ranges(b,'g:g',date,['C']),[r(600,1020)]);
   assert.deepEqual(S.ranges(b,'g:g',date,['A','B','C']),[]);assert.deepEqual(b.groups[0].members,[0,1,2]);
 });
+test('bulk exclusions retain all people tied across precise time intervals and count places only as a constraint',()=>{
+  const board=base(),group=board.groups[0];
+  board.people.push('Guest','Room','Fourth');
+  board.rows=board.people.map((_,index)=>({kind:index===4?'place':'person'}));
+  group.members=[0,1,2,3,4,5];
+  board.events=[
+    {id:'a',person:0,date,...r(545,560)},
+    {id:'b',person:1,date,...r(545,560)},
+    {id:'c',person:2,date,...r(600,660)},
+    {id:'fourth',person:5,date,...r(600,620)},
+    {id:'room',person:4,date,...r(545,690)}
+  ];
+  assert.deepEqual(S.ranges(board,'g:g',date),[],'a scheduled group guest with no availability blocks the common interval');
+  assert.deepEqual(S.bulkExclusions(board,group,date,new Set(['unavailable'])),['Guest']);
+  assert.deepEqual(S.bulkExclusions(board,group,date,new Set(['most'])),['Guest'],'both distinct two-person intervals count, regardless of duration');
+  assert.deepEqual(S.bulkExclusions(board,group,date,new Set(['least'])),['A','B','Guest','Fourth']);
+  assert.deepEqual(S.bulkExclusions(board,group,date,new Set(['all'])),['A','B','C','Guest','Fourth']);
+  assert.deepEqual(S.bulkExclusions(board,group,date,new Set(['most']),['B']),['A','Guest']);
+  board.events=board.events.filter(item=>item.id!=='room').concat({id:'room',person:4,date,...r(610,680)});
+  assert.deepEqual(S.bulkExclusions(board,group,date,new Set(['most'])),['A','B','Guest']);
+  assert.deepEqual(group.members,[0,1,2,3,4,5]);
+});
 test('converting a common segment to MTG edits only selected people, and updates other groups',()=>{
   const b=base(),next=S.reserve(b,'g',date,[r(600,660)],['C'],id);
   assert.deepEqual(next.meetings[0].members,[0,1]);assert.deepEqual(S.personRanges(next,0,date),[r(540,600),r(660,1080)]);

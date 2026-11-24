@@ -11,7 +11,7 @@ window.TokiGroupView=({context,change})=>{
   function visible(id){sync();return selection.has(id);}
   function saveSelection(){configured=true;try{localStorage.setItem(key(),JSON.stringify({version:1,selected:[...selection]}));}catch{}}
   function show(id){
-    sync();const ctx=context();if(!ctx.ready||id!=='@unassigned'&&!ctx.board.groups.some(group=>group.id===id))return;
+    sync();if(!context().ready)return;
     selection.add(id);saveSelection();change();
   }
   function open(){
@@ -26,7 +26,7 @@ window.TokiGroupView=({context,change})=>{
   }
   function refresh(){
     sync();const ctx=context(),count=ctx.board.groups.filter(g=>selection.has(g.id)).length;
-    $('group-view-button').textContent=`表示グループ ${count}/${ctx.board.groups.length} ▾`;
+    $('group-view-button').textContent=`▾ 表示グループ ${count}/${ctx.board.groups.length}`;
     $('group-view-button').disabled=!ctx.ready;
     if(ctx.ready&&ctx.prompt!==false&&!configured&&!prompted&&!document.querySelector('dialog[open]'))open();
   }

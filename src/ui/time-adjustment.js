@@ -1,9 +1,9 @@
 "use strict";
-window.TokiTimeAdjustment=({range,canSave,save,onBusy})=>{
+window.TokiTimeAdjustment=({range,canSave,save,onBusy,creatingMeeting=false})=>{
   const el=(tag,text)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
-  const form=el('form'),fields=el('fieldset'),error=el('p'),submit=el('button','時間を保存');
+  const form=el('form'),fields=el('fieldset'),error=el('p'),submit=el('button',creatingMeeting?'MTGを作成':'時間を保存');
   form.className='time-adjustment';
-  fields.append(el('legend','時間を調整'));
+  fields.append(el('legend',creatingMeeting?'MTGの時間':'時間を調整'));
   error.className='error time-adjustment-error';
   error.id='time-adjustment-error-'+crypto.randomUUID();
   error.setAttribute('role','alert');
@@ -48,7 +48,7 @@ window.TokiTimeAdjustment=({range,canSave,save,onBusy})=>{
   function refresh(){
     const to=selected(),invalid=to.end<=to.start;
     fields.disabled=saving||!canSave();
-    submit.disabled=fields.disabled||invalid||(to.start===range.start&&to.end===range.end);
+    submit.disabled=fields.disabled||invalid||(!creatingMeeting&&to.start===range.start&&to.end===range.end);
     const text=invalid?'⚠ 終了時刻は開始時刻より後にしてください。この時間は保存できません。':failure;
     error.textContent=text;error.hidden=!text;
     for(const control of end.controls){

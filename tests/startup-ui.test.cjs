@@ -33,7 +33,7 @@ async function environment(t,{width=1440,selected=true,offline=false,cached=fals
     w.localStorage.setItem('toki-company-v1:'+user.id+':companies',JSON.stringify([company]));
     w.localStorage.setItem('toki-company-v1:'+user.id+':'+company.id,JSON.stringify({userId:user.id,companyId:company.id,board,fetchedAt:Date.now()}));
   }
-  for(const name of ['auth-storage','shared','model','availability','schedule','availability-ui','time-adjustment','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-month','mobile-ui','group-view','company-ui'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
+  for(const name of ['auth-storage','shared','model','availability','schedule','availability-ui','time-adjustment','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-timeline','mobile-month','mobile-ui','group-view','company-ui'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
   const finished=w.eval(fs.readFileSync(sourcePath('app.js'),'utf8'));
   await flush();
   return {w,$,session,list,read,calls,finished,get gateShown(){return gateShown;},async signIn(value=user){session.resolve({data:{session:value?{user:value}:null}});await flush();},async companies(value=[company]){list.resolve({data:value});await flush();},async board(value={data:board}){read.resolve(value);await finished;await flush();}};
@@ -54,7 +54,7 @@ for(const width of [1440,390])test(`returning user opens the verified board with
   assert.equal(e.$('schedule-app').hidden,false);assert.equal(e.$('mobile-app').hidden,width>767);
   assert.equal(e.w.TokiShared.online,true);
   assert.equal(e.$('company-button').querySelectorAll('svg.account-icon').length,1);
-  if(width<768)assert.equal(e.$('mobile-app').querySelectorAll('button[aria-label="組織・アカウント"] svg.account-icon').length,1);
+  if(width<768)assert.equal(e.$('mobile-app').querySelectorAll('.mob-nav button[aria-label="アカウント"] svg.mob-nav-icon').length,1);
   // An explicit switch and a later logout must still show the original controls.
   e.w.TokiShared.leaveView();await flush();assertGate(e);assert.match(e.$('company-list').textContent,/予定表を開く/);
   await e.w.TokiShared.logout();await flush();assertGate(e);assert.equal(e.$('company-login').hidden,false);assert.equal(e.$('company-signed-in').hidden,true);

@@ -1,5 +1,5 @@
 "use strict";
-window.TokiMeetingExportUI=({board,selected,notify,canOpen})=>{
+window.TokiMeetingExportUI=({board,today,notify,canOpen})=>{
   const $=id=>document.getElementById(id),dialog=$('meeting-export-dialog'),all=$('meeting-export-all'),groups=$('meeting-export-groups');
   const choices=()=>[...groups.querySelectorAll('input[type="checkbox"]')];
   function update(){
@@ -22,7 +22,8 @@ window.TokiMeetingExportUI=({board,selected,notify,canOpen})=>{
       input.type='checkbox';input.value=group.id;input.checked=true;
       label.append(input,document.createTextNode(group.name));groups.append(label);
     }
-    const week=window.TokiModel.weekDates(selected());$('meeting-export-first').value=week[0];$('meeting-export-last').value=week[6];update();dialog.showModal();
+    const first=today(),M=window.TokiModel;
+    $('meeting-export-first').value=first;$('meeting-export-last').value=M.shiftDate(first,7)||M.MAX_DATE;update();dialog.showModal();
   };
   all.addEventListener('change',()=>{for(const input of choices())input.checked=all.checked;update();});
   groups.addEventListener('change',update);

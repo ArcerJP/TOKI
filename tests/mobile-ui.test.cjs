@@ -5,20 +5,19 @@ const S=require('../src/core/schedule.js');
 const date='2026-10-05';
 const seed=()=>S.reserve({schemaVersion:4,people:['A','B','C','D'],groups:[{id:'a',name:'局A',members:[0,1]},{id:'b',name:'局B',members:[1,2]}],events:[0,1,2].map(person=>({id:'e'+person,person,date,start:540,end:1080})),meetings:[]},'a',date,[{start:780,end:840}]);
 const flush=()=>new Promise(resolve=>setTimeout(resolve,40));
-async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false,guest=false,launchDate=date,blockedDates=[],entry=false,legacyFolded,preciseEnd}={}){
+async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false,guest=false,admin=false,memberMeetings=false,directory,launchDate=date,blockedDates=[],entry=false,legacyFolded,preciseEnd,projectedMeeting}={}){
   const errors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',e=>errors.push(e));
   const dom=new JSDOM(fs.readFileSync(sourcePath('index.html'),'utf8'),{url:'https://example.test/TOKI/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
   const w=dom.window,d=w.document,media=[];let board=seed(),version=1,hooks,online=true,saves=0,failSave=false;
   if(preciseEnd)board=S.editPerson(board,0,date,[{start:540,end:780}],[{start:540,end:preciseEnd}]);
   w.Date=class extends w.Date {constructor(...args){super(...(args.length?args:[launchDate+'T12:00:00']));}};
-  const access=scoped?{role:guest?'guest':'member',personId:'00000000-0000-4000-8000-000000000001'}:undefined;
+  const access=scoped?{role:guest?'guest':admin?'admin':'member',personId:'00000000-0000-4000-8000-000000000001',memberMeetings,managementWorkflows:true}:undefined;
   if(scoped)board.rows=board.people.map((_,i)=>({id:'00000000-0000-4000-8000-00000000000'+(i+1),kind:i===1?'place':'person'}));
   board.groups[0].id=groupId;board.meetings.filter(m=>m.group==='a').forEach(m=>m.group=groupId);
+  if(projectedMeeting)Object.assign(board.meetings[0],projectedMeeting);
   w.scrollTo=()=>{};w.confirm=()=>{throw Error('Unexpected browser confirmation');};
   w.matchMedia=query=>{const entry={media:query,matches:false,listeners:[],addEventListener(type,fn){this.listeners.push(fn);}};media.push(entry);entry.matches=query.includes('767')?width<=767:width<=1023&&coarse;return entry;};
   w.HTMLElement.prototype.setPointerCapture=()=>{};
-  // jsdom 26 has no PointerEvent handler properties; route them to its EventTarget.
-  for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])Object.defineProperty(w.HTMLElement.prototype,'on'+type,{configurable:true,set(value){if(this['_'+type])this.removeEventListener(type,this['_'+type]);this['_'+type]=value;this.addEventListener(type,value);},get(){return this['_'+type];}});
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
   const copies=[];Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>copies.push(text)}});
@@ -31,17 +30,20 @@ async function environment(t,{width=390,coarse=false,shared=false,preselect=true
     if(next.events.some(event=>event.person===0&&blockedDates.includes(event.date)))throw Object.assign(Error('登録済みのMTGと重なります。'),{code:'SCHEDULE_BUSY'});
     saves++;board=structuredClone(next);return {version:++version,payload:board,access};
   },refresh:async()=>{}};
-  for(const name of ['model','availability','schedule','availability-ui','time-adjustment','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-month','mobile-ui','group-view','company-ui','app'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
+  if(directory)Object.assign(w.TokiShared,{
+    company:{id:'test-company',role:access.role},user:{id:'test-user'},
+    manage:async (action,params)=>action==='members'?{members:directory.members}:directory.save(action,params),
+    guestAdmin:async (action,params)=>action==='list'?{guests:directory.guests}:directory.save(action,params)
+  });
+  for(const name of ['model','availability','schedule','availability-ui','time-adjustment','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-timeline','mobile-month','mobile-ui','group-view','company-ui','app'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
   await flush();await flush();
-  if(!entry)w.document.querySelector('.mob-nav [aria-label="予定"]')?.click();
+  if(!entry)w.document.querySelector('.mob-nav [aria-label="予定管理"]')?.click();
   t.after(()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[]);});
   const $=id=>d.getElementById(id),current=()=>shared?board:JSON.parse(w.localStorage.getItem('toki-availability-v3')).board;
   const scope=()=>d.querySelector('dialog[open]')||$('mobile-app');
   const button=(label,container=scope())=>{const b=[...container.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')===label||b.textContent===label);assert.ok(b,`button: ${label}; gate=${$('auth-message').textContent}; root=${$('mobile-app').textContent.slice(0,120)}`);return b;};
   async function click(label,container){button(label,container).click();await flush();}
-  async function select(label,value){const s=[...scope().querySelectorAll('select')].find(e=>e.getAttribute('aria-label')===label);assert.ok(s);s.value=value;s.dispatchEvent(new w.Event('change'));await flush();}
-  function pointer(type,minute,id=1,extra={}){const track=d.querySelector('.mob-editor-track'),e=new w.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientY:(minute-480)*1.6,clientX:160});Object.assign(e,{pointerId:id,isPrimary:true,...extra});track.dispatchEvent(e);}
-  return {w,d,$,click,button,select,pointer,copies,current,get saves(){return saves;},get error(){return d.querySelector('.mob-error')?.textContent;},async resetAccount(){hooks.reset();await flush();},async switchScope(scope){hooks.reset();w.TokiShared.scope=scope;hooks.board({version,payload:board});await flush();},async resize(newWidth,newCoarse=coarse){width=newWidth;coarse=newCoarse;media.forEach(entry=>{entry.matches=entry.media.includes('767')?width<=767:width<=1023&&coarse;entry.listeners.forEach(fn=>fn());});await flush();},async offline(value=true){online=!value;hooks.state({online,fetchedAt:Date.now()});await flush();},async remoteUpdate(){board=structuredClone(board);board.people[0]='A更新';hooks.board({version:++version,payload:board});await flush();},async localUpdate(){const value=structuredClone(current());value.people[0]='A更新';const text=JSON.stringify({version:3,board:value});w.localStorage.setItem('toki-availability-v3',text);w.dispatchEvent(new w.StorageEvent('storage',{key:'toki-availability-v3',newValue:text}));await flush();},fail(){failSave=true;}};
+  return {w,d,$,click,button,copies,current,get saves(){return saves;},get error(){return d.querySelector('.mob-error')?.textContent;},async resetAccount(){hooks.reset();await flush();},async switchScope(scope){hooks.reset();w.TokiShared.scope=scope;hooks.board({version,payload:board});await flush();},async resize(newWidth,newCoarse=coarse){width=newWidth;coarse=newCoarse;media.forEach(entry=>{entry.matches=entry.media.includes('767')?width<=767:width<=1023&&coarse;entry.listeners.forEach(fn=>fn());});await flush();},async offline(value=true){online=!value;hooks.state({online,fetchedAt:Date.now()});await flush();},async remoteUpdate(){board=structuredClone(board);board.people[0]='A更新';hooks.board({version:++version,payload:board});await flush();},async localUpdate(){const value=structuredClone(current());value.people[0]='A更新';const text=JSON.stringify({version:3,board:value});w.localStorage.setItem('toki-availability-v3',text);w.dispatchEvent(new w.StorageEvent('storage',{key:'toki-availability-v3',newValue:text}));await flush();},fail(){failSave=true;}};
 }
 
 test('guest starts with granted groups visible and cannot edit a shared place',async t=>{
@@ -52,13 +54,11 @@ test('guest starts with granted groups visible and cannot edit a shared place',a
   assert.equal(e.$('chart').querySelectorAll('.group-row').length,2);
   assert.equal(e.$('mobile-app').querySelector('button[aria-label="メンバー"]'),null);
 
-  await e.click('Bの時間を編集');
-  assert.equal(e.button('保存').disabled,true);
+  await e.click('B 09:00～13:00の操作');
+  assert.equal(timeForm(e),null);
   await e.click('閉じる');
-  await e.click('Aの時間を編集');
-  await e.select('編集する時間','range:0');
-  await e.click('開始を30分遅らせる');
-  await e.click('保存');
+  await e.click('A 09:00～13:00の操作');
+  changeTime(e,'開始の分',30);await saveTime(e);await flush();
   assert.equal(e.saves,1);
 });
 
@@ -204,21 +204,20 @@ test('members can edit their own and place times on mobile, while other people a
   assert.equal(e.$('add-group').hidden,true);
   assert.equal(e.$('add-person').textContent,'＋ 場所・外部予定を追加');
 
-  await e.click('Cの時間を編集');
-  assert.equal(e.button('保存').disabled,true);
-  assert.match(e.error,/閲覧のみ/);
+  await e.click('C 09:00～18:00の操作');
+  assert.equal(timeForm(e),null);
+  await e.click('閉じる');
+  assert.equal(e.$('mobile-app').querySelector('button[aria-label="局A 09:00～13:00からMTGを作成"]'),null);
+  await e.click('A、B MTG 13:00～14:00の操作');
+  assert.equal(timeForm(e),null);
   await e.click('閉じる');
 
-  await e.click('Aの時間を編集');
-  await e.select('編集する時間','range:0');
-  await e.click('開始を30分遅らせる');
-  await e.click('保存');
+  await e.click('A 09:00～13:00の操作');
+  changeTime(e,'開始の分',30);await saveTime(e);await flush();
   assert.equal(e.saves,1);
   assert.ok(e.current().events.some(event=>event.person===0&&event.start===570));
-  await e.click('Bの時間を編集');
-  await e.select('編集する時間','range:0');
-  await e.click('開始を30分遅らせる');
-  await e.click('保存');
+  await e.click('B 09:00～13:00の操作');
+  changeTime(e,'開始の分',30);await saveTime(e);await flush();
   assert.equal(e.saves,2);
   assert.ok(e.current().events.some(event=>event.person===1&&event.start===570));
   await e.resize(1440);
@@ -233,39 +232,39 @@ test('first visit hides all groups and shares the explicit selection between des
   assert.equal(e.$('chart').querySelectorAll('.person-row,.group-row').length,0);
   e.$('group-view-choices').querySelector('[data-group="b"]').click();await e.click('適用');
   assert.equal(e.$('chart').querySelectorAll('.group-row').length,1);assert.ok(e.$('chart').querySelector('.group-row').textContent.includes('局B'));
-  await e.resize(390);await e.click('予定');assert.deepEqual([...e.$('mobile-app').querySelectorAll('.mob-group-tr th button:first-child')].map(n=>n.textContent),['局B']);
+  await e.resize(390);await e.click('予定管理');assert.deepEqual([...e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name')].map(n=>n.textContent),['局B']);
   assert.equal(JSON.stringify(e.current()),before);
 });
 
 test('company changes start with their own empty selection; returning restores only that company preference',async t=>{
   const e=await environment(t,{shared:true});await e.switchScope('u:company-b');
-  assert.equal(e.$('group-view-dialog').open,false);await e.click('予定');
+  assert.equal(e.$('group-view-dialog').open,false);await e.click('予定管理');
   assert.equal(e.$('group-view-dialog').open,true);assert.equal(e.$('group-view-dialog').querySelectorAll('input:checked').length,0);
   e.$('group-view-choices').querySelector('[data-group="b"]').click();await e.click('適用');
-  const groupNames=()=>[...e.d.querySelectorAll('.mob-group-tr th button:first-child')].map(button=>button.textContent);
-  await e.switchScope('shared');assert.equal(e.$('group-view-dialog').open,false);await e.click('予定');assert.deepEqual(groupNames(),['局A','局B']);
-  await e.switchScope('u:company-b');assert.equal(e.$('group-view-dialog').open,false);await e.click('予定');assert.deepEqual(groupNames(),['局B']);
+  const groupNames=()=>[...e.d.querySelectorAll('.mob-group-tr .mob-table-name')].map(button=>button.textContent);
+  await e.switchScope('shared');assert.equal(e.$('group-view-dialog').open,false);await e.click('予定管理');assert.deepEqual(groupNames(),['局A','局B']);
+  await e.switchScope('u:company-b');assert.equal(e.$('group-view-dialog').open,false);await e.click('予定管理');assert.deepEqual(groupNames(),['局B']);
 });
 
 for(const width of [1440,390])for(const shared of [false,true])test(`created groups become visible and preserve other choices (${width}px, ${shared?'shared':'local'})`,async t=>{
   const e=await environment(t,{width,shared,preselect:false});
   e.$('group-view-choices').querySelector('[data-group="b"]').click();await e.click('適用');
-  if(width<768){await e.click('その他');await e.click('メンバー');await e.click('＋ グループ');}else e.$('add-group').click();
+  if(width<768){await e.click('アカウント');await e.click('メンバー');await e.click('＋ グループ');}else e.$('add-group').click();
   e.$('roster-name').value='作成したグループ';e.$('membership-options').querySelector('input[value="0"]').checked=true;
   await e.$('roster-form').onsubmit({preventDefault(){}});await flush();
   const created=e.current().groups.find(g=>g.name==='作成したグループ');assert.ok(created);assert.equal(e.$('roster-dialog').open,false);
   const preferenceKey=`toki-view-v1:${shared?'shared':'local'}:groups`;
   assert.deepEqual(JSON.parse(e.w.localStorage.getItem(preferenceKey)).selected.sort(),['b',created.id].sort());
-  if(width<768)await e.click('予定');
-  const visibleNames=()=>[...(width<768?e.$('mobile-app').querySelectorAll('.mob-group-tr th button:first-child'):e.$('chart').querySelectorAll('.group-row .row-name'))].map(n=>n.textContent);
+  if(width<768)await e.click('予定管理');
+  const visibleNames=()=>[...(width<768?e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name'):e.$('chart').querySelectorAll('.group-row .row-name'))].map(n=>n.textContent);
   assert.deepEqual(visibleNames(),['局B','作成したグループ']);
   if(shared){
     await e.switchScope('u:other-organization');assert.equal(e.$('group-view-dialog').querySelectorAll('input:checked').length,0);
-    await e.switchScope('shared');if(width<768)await e.click('予定');assert.deepEqual(visibleNames(),['局B','作成したグループ']);
+    await e.switchScope('shared');if(width<768)await e.click('予定管理');assert.deepEqual(visibleNames(),['局B','作成したグループ']);
   }
   await e.resize(width<768?1440:390);
-  if(width>=768)await e.click('予定');
-  assert.deepEqual([...(width<768?e.$('chart').querySelectorAll('.group-row .row-name'):e.$('mobile-app').querySelectorAll('.mob-group-tr th button:first-child'))].map(n=>n.textContent),['局B','作成したグループ']);
+  if(width>=768)await e.click('予定管理');
+  assert.deepEqual([...(width<768?e.$('chart').querySelectorAll('.group-row .row-name'):e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name'))].map(n=>n.textContent),['局B','作成したグループ']);
 });
 
 test('creating after dismissing the first filter prompt persists the new group without selecting existing groups',async t=>{
@@ -276,93 +275,135 @@ test('creating after dismissing the first filter prompt persists the new group w
   assert.equal(e.$('group-view-dialog').open,false);assert.equal(e.$('chart').querySelectorAll('.group-row').length,1);
 });
 
+test('a group created on this device is selected when it appears after administrator review',async t=>{
+  const e=await environment(t,{width:1440,shared:true});
+  let draft;
+  e.w.TokiShared.save=async next=>{draft=next;return {queued:true};};
+  e.$('add-group').click();e.$('roster-name').value='レビュー後に表示';
+  await e.$('roster-form').onsubmit({preventDefault(){}});
+  const created=draft.groups.find(group=>group.name==='レビュー後に表示');
+  assert.ok(created);
+  assert.doesNotMatch(e.$('chart').textContent,/レビュー後に表示/);
+  e.current().groups.push(created);await e.remoteUpdate();
+  assert.match(e.$('chart').textContent,/レビュー後に表示/);
+});
+
 test('failed group creation and editing a hidden group do not change display choices',async t=>{
   const e=await environment(t,{shared:true,preselect:false});await e.click('適用');
   const key='toki-view-v1:shared:groups',before=e.w.localStorage.getItem(key);
-  await e.click('その他');await e.click('メンバー');await e.click('局Aの設定を編集');e.$('roster-name').value='編集後の局A';
+  await e.click('アカウント');await e.click('メンバー');await e.click('局Aの設定を編集');e.$('roster-name').value='編集後の局A';
   await e.$('roster-form').onsubmit({preventDefault(){}});assert.equal(e.w.localStorage.getItem(key),before);
   await e.click('＋ グループ');e.$('roster-name').value='保存失敗グループ';e.fail();
   await e.$('roster-form').onsubmit({preventDefault(){}});assert.equal(e.$('roster-dialog').open,true);assert.match(e.$('roster-error').textContent,/保存失敗/);
   assert.equal(e.current().groups.some(g=>g.name==='保存失敗グループ'),false);assert.equal(e.w.localStorage.getItem(key),before);
-  e.$('cancel-roster').click();await e.click('予定');assert.equal(e.$('mobile-app').querySelectorAll('.mob-group-tr th button:first-child').length,0);
+  e.$('cancel-roster').click();await e.click('予定管理');assert.equal(e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name').length,0);
 });
 
 test('groups received from another device remain hidden until explicitly selected',async t=>{
   const e=await environment(t,{shared:true});
   const key='toki-view-v1:shared:groups',before=e.w.localStorage.getItem(key);
   e.current().groups.push({id:'remote-group',name:'別端末のグループ',members:[0]});await e.remoteUpdate();
-  assert.equal(e.w.localStorage.getItem(key),before);assert.equal([...e.$('mobile-app').querySelectorAll('.mob-group-tr th button:first-child')].some(n=>n.textContent==='別端末のグループ'),false);
+  assert.equal(e.w.localStorage.getItem(key),before);assert.equal([...e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name')].some(n=>n.textContent==='別端末のグループ'),false);
   await e.click('表示グループを選択');assert.equal(e.$('group-view-choices').querySelector('[data-group="remote-group"]').checked,false);
 });
 
-test('logout closes editors and removes company data from hidden DOM and exported text',async t=>{
-  const e=await environment(t,{shared:true});await e.click('局Aの時間を編集');await e.click('終了を30分遅らせる');
+test('logout closes time menus and removes company data from hidden DOM and exported text',async t=>{
+  const e=await environment(t,{shared:true});await e.click('A 09:00～13:00の操作');changeTime(e,'開始の分',30);
   e.$('export-result').value='Private schedule';e.$('print-area').textContent='Private schedule';
   await e.resetAccount();
   assert.equal(e.d.querySelector('dialog[open]'),null);assert.equal(e.$('auth-gate').hidden,false);
-  assert.equal(e.$('mobile-app').hidden,true);assert.equal(e.$('mobile-editor').textContent,'閉じる');
+  assert.equal(e.$('mobile-app').hidden,true);assert.equal(e.d.querySelector('.mob-dialog'),null);
   assert.equal(e.$('export-result').value,'');assert.equal(e.$('print-area').textContent,'');
   assert.equal(e.$('chart').textContent,'');assert.equal(e.saves,0);
 });
-test('compact layout selection and deferred switching preserve an open editor',async t=>{
+test('compact layout selection and deferred switching preserve an open time menu',async t=>{
   const e=await environment(t,{width:768});assert.equal(e.$('mobile-app').hidden,true);
   await e.resize(767);assert.equal(e.$('mobile-app').hidden,false);
-  await e.click('予定');
-  await e.click('局Aの時間を編集');await e.resize(1280);assert.equal(e.d.documentElement.dataset.ui,'compact');
+  await e.click('予定管理');
+  await e.click('A 09:00～13:00の操作');await e.resize(1280);assert.equal(e.d.documentElement.dataset.ui,'compact');
   await e.click('閉じる');assert.equal(e.d.documentElement.dataset.ui,'desktop');
   await e.resize(1023,true);assert.equal(e.d.documentElement.dataset.ui,'compact');
   await e.resize(1024,true);assert.equal(e.d.documentElement.dataset.ui,'desktop');
 });
-test('scroll gestures cannot edit; explicit selection previews without persistence, then saves once',async t=>{
-  const e=await environment(t),before=JSON.stringify(e.current());await e.click('局Aの時間を編集');
-  const summary=()=>e.d.querySelector('.mob-preview-summary').textContent;
-  const initial=summary();e.pointer('pointerdown',600);e.pointer('pointermove',660);e.pointer('pointerup',660);assert.equal(summary(),initial);assert.equal(JSON.stringify(e.current()),before);
-  await e.click('範囲選択モード');e.pointer('pointerdown',600);e.pointer('pointermove',660);e.pointer('pointerup',660);
-  assert.match(summary(),/10:00～11:00/);assert.equal(JSON.stringify(e.current()),before);
-  assert.equal(e.button('スクロールモード').getAttribute('aria-pressed'),'true');await e.click('保存');
-  assert.ok(e.current().meetings.some(m=>m.start===600&&m.end===660));
-  for(const p of [0,1])assert.equal(S.personRanges(e.current(),p,date).some(r=>r.start<660&&r.end>600),false);
+test('mobile table names open the roster, monthly day labels are plain text, and MTG bands open participant editing',async t=>{
+  const e=await environment(t);
+  const names=[...e.$('mobile-app').querySelectorAll('th[scope="row"] .mob-table-name')];
+  assert.ok(names.length);
+  for(const name of names)assert.equal(name.tagName,'BUTTON');
+  await e.click('Aを編集・削除');
+  assert.equal(e.$('roster-dialog').open,true);
+  assert.equal(e.$('roster-name').value,'A');
+  e.$('cancel-roster').click();
+  assert.equal(e.d.querySelector('dialog[open]'),null);
+  await e.click('A、B MTG 13:00～14:00の操作');
+  await e.click('対象者を編集');
+  assert.equal(e.$('meeting-dialog').open,true);
+  assert.deepEqual([...e.$('meeting-members').querySelectorAll('li span')].map(name=>name.textContent),['A','B']);
+  e.$('close-meeting').click();
+  await e.click('予定入力');
+  const day=e.$('mobile-app').querySelector('.mob-month-date[aria-current="date"]');
+  assert.equal(day.tagName,'SPAN');day.click();
+  assert.equal(e.d.querySelector('dialog[open]'),null);
 });
-test('cancel, multitouch and rotation restore the prior draft without writing',async t=>{
-  for(const reason of ['cancel','second-pointer','rotation']){
-    const e=await environment(t),before=JSON.stringify(e.current());await e.click('局Aの時間を編集');const summary=e.d.querySelector('.mob-preview-summary').textContent;
-    await e.click('範囲選択モード');e.pointer('pointerdown',600);e.pointer('pointermove',660);
-    if(reason==='cancel')e.pointer('pointercancel',660);else if(reason==='second-pointer')e.pointer('pointerdown',630,2,{isPrimary:false});else e.w.dispatchEvent(new e.w.Event('orientationchange'));
-    assert.equal(e.d.querySelector('.mob-preview-summary').textContent,summary,reason);assert.equal(JSON.stringify(e.current()),before,reason);
-  }
-});
-test('dirty cancellation is inline and discards data only after the explicit choice',async t=>{
-  const e=await environment(t),before=JSON.stringify(e.current());await e.click('局Aの時間を編集');await e.click('終了を30分遅らせる');await e.click('閉じる');
-  assert.ok(e.d.querySelector('.mob-discard'));await e.click('編集に戻る');assert.equal(e.$('mobile-editor').open,true);
-  await e.click('キャンセル');await e.click('変更を破棄');assert.equal(e.$('mobile-editor').open,false);assert.equal(JSON.stringify(e.current()),before);
-});
-test('MTG expansion/movement preserve participants and reject unavailable ranges',async t=>{
-  const e=await environment(t);await e.click('局Aの時間を編集');const id=e.current().meetings[0].id;await e.select('編集する時間',id);
-  await e.click('開始を30分早める');await e.click('終了を30分遅らせる');await e.click('30分後へ');await e.click('保存');
-  const m=e.current().meetings[0];assert.deepEqual([m.start,m.end,m.members],[780,900,[0,1]]);
-  await e.click('局Aの時間を編集');await e.select('編集する時間',id);await e.click('移動モード');e.pointer('pointerdown',780);e.pointer('pointermove',1080);e.pointer('pointerup',1080);
-  assert.match(e.error,/可能時間がありません/);assert.equal(e.button('保存').disabled,true);assert.equal(e.current().meetings[0].end,900);
+test('only an organization administrator can inspect effective member and guest permissions from the mobile table',async t=>{
+  const rowId=index=>'00000000-0000-4000-8000-00000000000'+index;
+  const writes=[];
+  const directory={
+    members:[{id:'a-user',personId:rowId(1),role:'member',status:'active',groupIds:['a'],email:'private@example.test'}],
+    guests:[{id:'c-guest',personId:rowId(3),revoked:false,groupIds:['b']}],
+    save:(action,params)=>writes.push([action,JSON.parse(JSON.stringify(params))])
+  };
+  const e=await environment(t,{shared:true,scoped:true,admin:true,memberMeetings:true,directory});
+  const values=()=>Object.fromEntries([...e.d.querySelectorAll('dialog[open] dt')].map(label=>[label.textContent,label.nextElementSibling.textContent]));
+  const openAccess=async name=>{await e.click(name+'を編集・削除');e.$('roster-access').click();await flush();};
+  await openAccess('A');
+  assert.deepEqual(values(),{
+    '閲覧できるグループ':'局A','閲覧できる人':'A','閲覧できる場所・外部予定':'B',
+    '可能時間を編集できる人':'A','可能時間を編集できる場所・外部予定':'B','MTGを設定できるグループ':'局A'
+  });
+  assert.doesNotMatch(e.d.querySelector('dialog[open]').textContent,/private@example/);
+  e.d.querySelector('dialog[open] input[value="b"]').click();
+  await e.d.querySelector('dialog[open] form').onsubmit({preventDefault(){}});
+  assert.deepEqual(writes,[['set_group_access',{p_member:'a-user',p_payload:['a','b']}]]);
+  await openAccess('C');
+  assert.equal(values()['閲覧できるグループ'],'局B');
+  assert.equal(values()['閲覧できる人'],'C');
+  assert.equal(values()['可能時間を編集できる人'],'C');
+  assert.equal(values()['可能時間を編集できる場所・外部予定'],'なし');
+  assert.equal(values()['MTGを設定できるグループ'],'なし');
+  assert.equal(e.d.querySelector('dialog[open] input[value="'+rowId(4)+'"]'),null);
+  await e.d.querySelector('dialog[open] form').onsubmit({preventDefault(){}});
+  assert.deepEqual(writes.at(-1),['set_access',{p_guest:'c-guest',p_access:{groups:['b']}}]);
+  await openAccess('C');
+  e.w.TokiShared.company.role='member';await e.offline();
+  assert.equal(e.d.querySelector('dialog[open]'),null);
+  assert.equal(e.$('roster-access').closest('[open]'),null);
+
+  const member=await environment(t,{shared:true,scoped:true,directory});
+  await member.click('Aを編集・削除');
+  assert.equal(member.$('roster-access').hidden,true);
+  assert.equal(e.saves,0);
 });
 test('personal MTG release restores only that participant; availability menu copy/deletion uses same interval',async t=>{
   const e=await environment(t);
-  const person=e.$('mobile-app').querySelector('[aria-label="Aの時間を編集"]').closest('tr');await e.click('局A MTG 13:00～14:00の操作',person);await e.click('削除（可能時間を復元）');
+  const person=[...e.$('mobile-app').querySelectorAll('.mob-table-name')].find(n=>n.textContent==='A').closest('tr');await e.click('局A MTG 13:00～14:00の操作',person);await e.click('削除（可能時間を復元）');
   assert.deepEqual(e.current().meetings[0].members,[1]);assert.deepEqual(S.personRanges(e.current(),0,date),[{start:540,end:1080}]);
   await e.click('A 09:00～18:00の操作');await e.click('時間をコピー');assert.deepEqual(e.copies,['10月5日(月)：09:00～18:00']);await e.click('削除');assert.deepEqual(S.personRanges(e.current(),0,date),[]);
 });
 test('group filters apply together, do not change the board or export defaults, and persist locally',async t=>{
   const e=await environment(t),before=JSON.stringify(e.current());await e.click('表示グループを選択');const choices=e.d.querySelector('dialog[open]');
-  const checkbox=choices.querySelector('[data-group="a"]');checkbox.click();assert.ok([...e.$('mobile-app').querySelectorAll('.mob-group-tr th button:first-child')].some(h=>h.textContent==='局A'));
+  const checkbox=choices.querySelector('[data-group="a"]');checkbox.click();assert.ok([...e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name')].some(h=>h.textContent==='局A'));
   assert.equal(choices.querySelector('input').indeterminate,true);await e.click('適用');
-  assert.equal([...e.$('mobile-app').querySelectorAll('.mob-group-tr th button:first-child')].some(h=>h.textContent==='局A'),false);assert.ok(!JSON.parse(e.w.localStorage.getItem('toki-view-v1:local:groups')).selected.includes('a'));assert.equal(JSON.stringify(e.current()),before);
-  assert.ok([...e.$('mobile-app').querySelectorAll('tbody th button:first-child')].some(h=>h.textContent==='B'));
+  assert.equal([...e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name')].some(h=>h.textContent==='局A'),false);assert.ok(!JSON.parse(e.w.localStorage.getItem('toki-view-v1:local:groups')).selected.includes('a'));assert.equal(JSON.stringify(e.current()),before);
+  assert.ok([...e.$('mobile-app').querySelectorAll('tbody .mob-table-name')].some(h=>h.textContent==='B'));
   await e.click('書き出し');await e.click('MTG一括書き出し');assert.equal(e.$('meeting-export-groups').querySelectorAll('input:checked').length,2);
-  const expected=S.exportMeetings(e.current(),e.current().groups.map(g=>g.id),'2026-10-04','2026-10-10');
+  const expected=S.exportMeetings(e.current(),e.current().groups.map(g=>g.id),'2026-10-05','2026-10-12');
   assert.equal(e.$('meeting-export-result').value,expected);await e.click('コピー');assert.deepEqual(e.copies,[expected]);
 });
 
 test('mobile starts at the current month with four bottom actions and only editable targets',async t=>{
   const e=await environment(t,{entry:true,shared:true,scoped:true,launchDate:'2028-01-31'});
-  assert.deepEqual([...e.d.querySelectorAll('.mob-nav button')].map(button=>button.textContent),['予定入力','予定','書き出し','その他']);
+  assert.deepEqual([...e.d.querySelectorAll('.mob-nav button')].map(button=>button.textContent),['予定入力','予定管理','書き出し','アカウント']);
   assert.equal(e.d.querySelector('.mob-nav [aria-current="page"]').textContent,'予定入力');
   assert.deepEqual([...e.d.querySelectorAll('.mob-entry-person option')].map(option=>option.textContent),['A','B']);
   assert.equal(e.d.querySelector('.mob-entry-person').selectedOptions[0].textContent,'A');
@@ -371,7 +412,7 @@ test('mobile starts at the current month with four bottom actions and only edita
   assert.match(e.button('日付を選択').textContent,/2月29日/);
   await e.click('日付を選択');e.$('picker-days').querySelector('[data-date="2028-02-11"]').click();await flush();
   assert.match(e.button('日付を選択').textContent,/2月11日/);
-  await e.click('予定');assert.equal(e.d.querySelector('.mob-month').hidden,true);
+  await e.click('予定管理');assert.equal(e.d.querySelector('.mob-month').hidden,true);
   const group=e.d.querySelector('.mob-group-tr'),toggle=group.querySelector('.mob-table-fold');
   assert.equal(toggle.getAttribute('aria-expanded'),'true');
   const count=e.d.querySelectorAll('.mob-table tbody tr').length;
@@ -383,13 +424,13 @@ test('initial mobile group selection waits until the comparison table is first o
   const e=await environment(t,{entry:true,preselect:false});
   assert.equal(e.$('group-view-dialog').open,false);
   assert.equal(e.d.querySelector('.mob-month').hidden,false);
-  await e.click('予定');
+  await e.click('予定管理');
   assert.equal(e.$('group-view-dialog').open,true);
   assert.equal(e.$('group-view-dialog').querySelectorAll('input:checked').length,0);
 });
 test('the new mobile table carries over a saved group fold and stores later changes for that table',async t=>{
   const e=await environment(t,{entry:true,legacyFolded:['a']});
-  await e.click('予定');
+  await e.click('予定管理');
   assert.equal(e.button('局Aのメンバー表示').getAttribute('aria-expanded'),'false');
   assert.equal(e.button('局Bのメンバー表示').getAttribute('aria-expanded'),'true');
   await e.click('局Aのメンバー表示');
@@ -430,7 +471,7 @@ test('a stationary long press adds one half hour on an empty monthly row and lea
   g.touch(band,'touchstart',[atBand]);await holdMonth();g.touch(band,'touchend',[],[atBand]);await flush();
   assert.equal(e.saves,1);assert.equal(e.d.querySelector('dialog[open]'),null);
 });
-test('monthly touch gestures separate scrolling, tapping, range creation, cross-date moves and resizing',async t=>{
+test('monthly touch gestures separate scrolling, tapping, range creation, cross-date copying and resizing',async t=>{
   const e=await environment(t,{entry:true,shared:true}),g=monthGesture(e);
   const day6='2026-10-06',day7='2026-10-07',day8='2026-10-08';
   let down=g.point(day6,515),up={...down,clientY:down.clientY+70},track=g.track(day6);
@@ -446,7 +487,7 @@ test('monthly touch gestures separate scrolling, tapping, range creation, cross-
   let band=g.track(day7).querySelector('.mob-month-band');
   down=g.point(day7,585);up=g.point(day8,615);
   g.touch(band,'touchstart',[down]);await holdMonth();g.touch(band,'touchmove',[up]);g.touch(band,'touchend',[],[up]);await flush();
-  assert.deepEqual(S.personRanges(e.current(),0,day7),[]);
+  assert.deepEqual(S.personRanges(e.current(),0,day7),[{start:540,end:630}]);
   assert.deepEqual(S.personRanges(e.current(),0,day8),[{start:570,end:660}]);
   band=g.track(day8).querySelector('.mob-month-band');down=g.point(day8,657);up=g.point(day8,688);
   g.touch(band,'touchstart',[down]);await holdMonth();g.touch(band,'touchmove',[up]);g.touch(band,'touchend',[],[up]);await flush();
@@ -466,28 +507,134 @@ test('pinching cancels a pending edit, scales the grid, and consumes the remaini
   assert.ok(parseFloat(g.viewport.style.getPropertyValue('--month-slot'))<44);
   g.touch(track,'touchend',[a],[b]);g.touch(track,'touchend',[],[a]);await flush();assert.equal(e.saves,0);
 });
-test('individual transfer preserves precise minutes and can be cancelled without effect',async t=>{
-  const e=await environment(t);await e.click('Cの時間を編集');await e.select('編集する時間','range:0');await e.select('移動先の人','3');await e.click('開始を30分遅らせる');await e.click('保存');
-  assert.deepEqual(S.personRanges(e.current(),2,date),[]);assert.deepEqual(S.personRanges(e.current(),3,date),[{start:570,end:1080}]);
-});
-test('group exclusions strike through a person without changing existing MTG participants',async t=>{
+test('a group common band creates MTGs for the active participants within the selected range',async t=>{
   const e=await environment(t),before=JSON.stringify(e.current());await e.click('Aを対象から一時除外');
   assert.equal(e.$('mobile-app').querySelector('.mob-excluded').textContent,'A');assert.equal(JSON.stringify(e.current()),before);
-  await e.click('局Aの時間を編集');await e.click('保存');assert.deepEqual(e.current().meetings.at(-1).members,[1]);
+  await e.click('局A 09:00～13:00からMTGを作成');
+  assert.match(e.d.querySelector('dialog[open] .mob-note').textContent,/^対象者：B$/);
+  changeTime(e,'開始の時',8);await saveTime(e);
+  assert.match(timeForm(e).querySelector('[role=alert]').textContent,/可能時間がありません/);
+  assert.equal(JSON.stringify(e.current()),before);
+  changeTime(e,'開始の時',9);await saveTime(e);
+  const [existing,created]=e.current().meetings;
+  assert.deepEqual(existing.members,[0,1]);
+  assert.deepEqual([created.start,created.end,created.members],[540,570,[1]]);
+  assert.deepEqual(S.personRanges(e.current(),0,date),S.personRanges(JSON.parse(before),0,date));
 });
-test('table scroll mode does not expose drag editing, fullscreen can be exited',async t=>{
-  const e=await environment(t),before=JSON.stringify(e.current());await e.click('予定');assert.ok(e.$('mobile-app').querySelector('.mob-table'));assert.equal(e.$('mobile-app').querySelector('.timeline'),null);
+function tableGesture(e){
+  const viewport=e.d.querySelector('.mob-table-scroll');
+  const rect=(left,top,width,height)=>({left,top,width,height,right:left+width,bottom:top+height});
+  viewport.getBoundingClientRect=()=>rect(0,0,390,560);
+  const slot=()=>parseFloat(viewport.style.getPropertyValue('--table-slot'))||44;
+  function track(name){
+    Object.defineProperty(viewport.querySelector('th'),'offsetWidth',{value:128,configurable:true});
+    const row=[...viewport.querySelectorAll('.mob-table-name')].find(node=>node.textContent===name).closest('tr');
+    const node=row.querySelector('.mob-table-track');
+    node.getBoundingClientRect=()=>rect(128-viewport.scrollLeft,58,slot()*32,48);
+    for(const bar of node.querySelectorAll('.mob-table-bar'))bar.getBoundingClientRect=()=>rect(
+      128-viewport.scrollLeft+parseFloat(bar.style.left)/100*slot()*32,65,parseFloat(bar.style.width)/100*slot()*32,34
+    );
+    return node;
+  }
+  function touch(target,type,touches,changedTouches=touches){
+    const event=new e.w.Event(type,{bubbles:true,cancelable:true});
+    Object.assign(event,{touches,changedTouches});target.dispatchEvent(event);return event;
+  }
+  const point=(minute,identifier=1)=>({identifier,clientX:128-viewport.scrollLeft+(minute-480)/30*slot(),clientY:82});
+  return {viewport,track,touch,point};
+}
+test('the mobile table cancels edits on scroll and pinch, and creates or adjusts MTG only within available time',async t=>{
+  const e=await environment(t,{shared:true}),g=tableGesture(e);
+  const common=()=>g.track('局A').querySelector('button[aria-label$="からMTGを作成"]');
+  let bar=common(),a=g.point(550),b=g.point(580,2);
+  g.touch(bar,'touchstart',[a]);
+  const swiped={...b,identifier:1};
+  assert.equal(g.touch(bar,'touchmove',[swiped]).defaultPrevented,false);
+  g.touch(bar,'touchend',[],[swiped]);
+  assert.equal(e.saves,0);
+  b=g.point(580,2);g.touch(bar,'touchstart',[a]);await holdMonth();
+  g.touch(bar,'touchstart',[a,b]);
+  const spread={...b,clientX:b.clientX+45};
+  assert.equal(g.touch(bar,'touchmove',[a,spread]).defaultPrevented,true);
+  assert.ok(parseFloat(g.viewport.style.getPropertyValue('--table-slot'))>44);
+  g.touch(bar,'touchend',[a],[spread]);g.touch(bar,'touchend',[],[a]);
+  assert.equal(e.saves,0);
+
+  g.viewport.scrollLeft=120;
+  let track=g.track('局A');a=g.point(525);
+  g.touch(track,'touchstart',[a]);g.touch(track,'touchend',[],[a]);
+  assert.match(e.$('toast').textContent,/可能時間がありません/);assert.equal(e.saves,0);
+  g.viewport.scrollLeft=170;
+  bar=common();a=g.point(545);b=g.point(615);
+  g.touch(bar,'touchstart',[a]);await holdMonth();
+  assert.equal(g.touch(bar,'touchmove',[b]).defaultPrevented,true);
+  g.touch(bar,'touchend',[],[b]);await flush();
+  const created=e.current().meetings.find(meeting=>meeting.start===540);
+  assert.deepEqual([created.start,created.end,created.members],[540,630,[0,1]]);
+
+  g.viewport.scrollLeft=300;
+  track=g.track('局A');bar=track.querySelector('.mob-table-mtg[aria-label*="09:00～10:30"]');
+  a=g.point(629);b=g.point(659);
+  g.touch(bar,'touchstart',[a]);await holdMonth();g.touch(bar,'touchmove',[b]);g.touch(bar,'touchend',[],[b]);await flush();
+  const changed=e.current().meetings.find(meeting=>meeting.id===created.id);
+  assert.deepEqual([changed.start,changed.end,changed.members],[540,660,[0,1]]);
+});
+test('the mobile table edits only permitted rows',async t=>{
+  const e=await environment(t,{shared:true,scoped:true}),g=tableGesture(e),a=g.point(515);
+  for(const name of ['C','A','B']){
+    const track=g.track(name);
+    g.touch(track,'touchstart',[a]);g.touch(track,'touchend',[],[a]);await flush();
+  }
+  assert.equal(e.saves,2);
+  assert.deepEqual(e.current().events.filter(range=>range.start===510).map(range=>range.person),[0,1]);
+});
+test('signed-in members can edit an MTG in a permitted group while guests only see it',async t=>{
+  const projectedMeeting={creatorName:'登録した人',members:[],limitedParticipants:true};
+  const e=await environment(t,{shared:true,scoped:true,memberMeetings:true,projectedMeeting});
+  const g=tableGesture(e),bar=g.track('局A').querySelector('button[aria-label$="からMTGを作成"]'),a=g.point(545);
+  g.touch(bar,'touchstart',[a]);g.touch(bar,'touchend',[],[a]);await flush();
+  assert.ok(e.current().meetings.some(meeting=>meeting.start===540&&meeting.end===570));
+  await e.click('MTG 13:00～14:00の操作');
+  assert.match(e.d.querySelector('dialog[open]').textContent,/登録者：登録した人/);
+  changeTime(e,'終了の分',30);await saveTime(e);await flush();
+  assert.equal(e.current().meetings[0].end,870);
+
+  const guest=await environment(t,{shared:true,scoped:true,guest:true,memberMeetings:true,projectedMeeting});
+  await guest.click('MTG 13:00～14:00の操作');
+  assert.equal(timeForm(guest),null);
+  assert.equal(guest.d.querySelector('dialog[open]').textContent.includes('削除（可能時間を復元）'),false);
+});
+test('the mobile table fullscreen can be exited without edits',async t=>{
+  const e=await environment(t),before=JSON.stringify(e.current());await e.click('予定管理');assert.ok(e.$('mobile-app').querySelector('.mob-table'));assert.equal(e.$('mobile-app').querySelector('.timeline'),null);
   await e.click('⛶ 全画面表示');assert.equal(e.$('mobile-app').classList.contains('mob-full'),true);await e.click('⛶ 全画面終了');assert.equal(e.$('mobile-app').classList.contains('mob-full'),false);assert.equal(JSON.stringify(e.current()),before);
 });
+
+test('switching the desktop to monthly entry exits the daily table fullscreen',async t=>{
+  const e=await environment(t,{width:1440}),before=JSON.stringify(e.current());
+  await e.$('fullscreen-button').onclick();
+  assert.equal(e.d.documentElement.classList.contains('schedule-fullscreen'),true);
+  await e.$('desktop-entry-view').onclick();
+  assert.equal(e.d.documentElement.classList.contains('schedule-fullscreen'),false);
+  assert.equal(e.$('desktop-entry').hidden,false);
+  assert.equal(e.$('desktop-entry-view').getAttribute('aria-pressed'),'true');
+  assert.equal(JSON.stringify(e.current()),before);
+});
 test('local and shared concurrent changes block saving and are applied on closing',async t=>{
-  for(const shared of [false,true]){const e=await environment(t,{shared});await e.click('局Aの時間を編集');await e.click('終了を30分遅らせる');if(shared)await e.remoteUpdate();else await e.localUpdate();
-    assert.match(e.error,/更新/);assert.equal(e.button('保存').disabled,true);await e.click('キャンセル');await e.click('変更を破棄');assert.equal(e.current().people[0],'A更新');assert.equal(e.saves,0);
+  for(const shared of [false,true]){const e=await environment(t,{shared});await e.click('A 09:00～13:00の操作');changeTime(e,'開始の分',30);if(shared)await e.remoteUpdate();else await e.localUpdate();
+    await saveTime(e);
+    assert.match(timeForm(e).querySelector('[role=alert]').textContent,/更新/);
+    await e.click('閉じる');
+    assert.ok([...e.$('mobile-app').querySelectorAll('.mob-table-name')].some(n=>n.textContent==='A更新'));
+    assert.equal(e.current().people[0],'A更新');assert.equal(e.saves,0);
   }
 });
-test('offline forces scroll mode and blocks writing while retaining copy; save failure keeps draft open',async t=>{
-  const e=await environment(t,{shared:true});await e.click('局Aの時間を編集');await e.select('編集する時間',e.current().meetings[0].id);await e.click('移動モード');await e.offline();
-  assert.equal(e.d.querySelector('.mob-editor-track').dataset.mode,'scroll');assert.equal(e.button('保存').disabled,true);await e.click('時間をコピー');assert.deepEqual(e.copies,['10月5日(月)：13:00～14:00']);
-  await e.offline(false);await e.click('終了を30分遅らせる');e.fail();await e.click('保存');assert.equal(e.$('mobile-editor').open,true);assert.equal(e.saves,0);assert.equal(e.current().meetings[0].end,840);assert.match(e.error,/保存失敗/);
+test('offline blocks time changes while retaining copy; save failure keeps the time menu open',async t=>{
+  const e=await environment(t,{shared:true});await e.click('A、B MTG 13:00～14:00の操作');await e.offline();
+  const form=timeForm(e);assert.equal(form.querySelector('fieldset').disabled,true);assert.equal(e.button('時間を保存').disabled,true);
+  await e.click('時間をコピー');assert.deepEqual(e.copies,['10月5日(月)：13:00～14:00']);
+  await e.offline(false);changeTime(e,'終了の分',30);e.fail();await saveTime(e);
+  assert.equal(timeForm(e),form);assert.equal(e.saves,0);assert.equal(e.current().meetings[0].end,840);
+  assert.match(form.querySelector('[role=alert]').textContent,/保存失敗/);
 });
 
 test('desktop local save failure retains the old board and form, and retry saves once',async t=>{
@@ -527,4 +674,19 @@ test('desktop drag cannot overwrite a local update and adopts it after release',
   fire(track,'pointerdown',120);fire(e.d,'pointermove',180);await e.localUpdate();fire(e.d,'pointerup',180);await flush();
   assert.equal(e.current().people[0],'A更新');assert.deepEqual(S.personRanges(e.current(),3,date),[]);
   assert.equal(e.d.querySelector('[data-person="0"] .row-name').textContent,'A更新');
+});
+test('desktop availability drag stays on the originating person when crossing a different row',async t=>{
+  const e=await environment(t,{width:1440});
+  const start=e.d.querySelector('.timeline[data-row="p:0"]'),other=e.d.querySelector('.timeline[data-row="p:3"]');
+  start.getBoundingClientRect=()=>({left:0,width:960,top:0,height:30,right:960,bottom:30});
+  e.d.elementFromPoint=()=>other;
+  const send=(node,type,x,y)=>{
+    const event=new e.w.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y});
+    Object.assign(event,{pointerId:1});node.dispatchEvent(event);
+  };
+  send(start.querySelector('.event.availability'),'pointerdown',120,15);
+  send(other,'pointermove',90,75);
+  send(other,'pointerup',90,75);await flush();
+  assert.deepEqual(S.personRanges(e.current(),0,date),[{start:510,end:750},{start:840,end:1080}]);
+  assert.deepEqual(S.personRanges(e.current(),3,date),[]);
 });

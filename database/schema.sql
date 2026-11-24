@@ -143,7 +143,9 @@ begin
       or (item->>'start') !~ '^[0-9]+$' or (item->>'end') !~ '^[0-9]+$'
       or (item->>'start')::integer < 480 or (item->>'end')::integer > 1440 or (item->>'end')::integer <= (item->>'start')::integer
       or jsonb_typeof(item->'members') is distinct from 'array' then raise exception 'INVALID'; end if;
-    if jsonb_array_length(item->'members') not between 1 and 100 or (item - array['id','group','date','start','end','members']) <> '{}'::jsonb then raise exception 'INVALID'; end if;
+    if jsonb_array_length(item->'members') not between 1 and 100
+      or (item - array['id','group','date','start','end','members','creatorName']) <> '{}'::jsonb
+      or (item ? 'creatorName' and (jsonb_typeof(item->'creatorName') is distinct from 'string' or toki_private.js_length(item->>'creatorName') not between 1 and 40)) then raise exception 'INVALID'; end if;
     begin
       if (item->>'date')::date not between date '0001-01-07' and date '9999-12-25' then raise exception 'INVALID'; end if;
     exception when invalid_datetime_format or datetime_field_overflow then raise exception 'INVALID'; end;

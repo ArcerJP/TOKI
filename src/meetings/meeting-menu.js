@@ -1,5 +1,5 @@
 "use strict";
-window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,removeAvailability,canAdjustTime,adjustTime,canDuplicate,openDuplicate,notify,settled})=>{
+window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,removeAvailability,canAdjustTime,canSaveTime,adjustTime,canDuplicate,openDuplicate,notify,settled})=>{
   const $=id=>document.getElementById(id),dialog=$('meeting-menu');
   const selector='.event.meeting, .event.availability';
   let press=null,target=null,adjustment=null,suppressClick=false,resetClick;
@@ -21,6 +21,8 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
     onOpen();target=availability?{kind:'availability',person,date:range.date,start:range.start,end:range.end}:{kind:'meeting',id:range.id,person};
     $('meeting-menu-title').textContent=availability?current.people[person]+'の可能時間':person===null?'グループのMTG':current.people[person]+'のMTG';
     $('meeting-menu-time').textContent=window.TokiAvailability.formatDay(range.date,[range]);
+    $('meeting-menu-creator').textContent=availability?'':'登録者：'+(range.creatorName||'不明');
+    $('meeting-menu-creator').hidden=availability;
     $('meeting-menu-scope').textContent=availability?'この帯の可能時間を削除し、所属グループの共通時間にも反映します。':person===null?'削除すると対象者全員の可能時間を復元します。':'削除するとこの人だけの可能時間を復元します。';
     $('close-meeting-menu').setAttribute('aria-label',availability?'可能時間の操作を閉じる':'MTGの操作を閉じる');
     $('meeting-copy-fallback').setAttribute('aria-label',availability?'コピーする可能時間':'コピーするMTGの時間');
@@ -32,7 +34,7 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
     if(canAdjustTime(target)){
       const source=target,fingerprint=JSON.stringify(current);
       adjustment=window.TokiTimeAdjustment({
-        range,canSave:()=>target===source&&canDuplicate(source),
+        range,canSave:()=>target===source&&canSaveTime(source),
         async save(to){await adjustTime(source,to,fingerprint);if(target===source&&dialog.open)dialog.close();},
         onBusy(saving){if(target===source){dialog.setAttribute('aria-busy',String(saving));refresh();}}
       });
@@ -78,7 +80,7 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
   dialog.addEventListener('close',()=>{
     if(dialog.open)return;
     dialog.setAttribute('aria-busy','false');
-    target=null;adjustment=null;$('meeting-time-adjustment').replaceChildren();cancel();suppressClick=false;settled();
+    target=null;adjustment=null;$('meeting-menu-creator').textContent='';$('meeting-time-adjustment').replaceChildren();cancel();suppressClick=false;settled();
   });
   $('delete-meeting').onclick=async()=>{
     if(!target||!canDelete(target))return;

@@ -38,6 +38,7 @@
     <script src="google-calendar.js" defer></script>
     <script src="google-import-ui.js" defer></script>
     <script src="mobile-model.js" defer></script>
+    <script src="mobile-timeline.js" defer></script>
     <script src="mobile-month.js" defer></script>
     <script src="mobile-ui.js" defer></script>
     <script src="group-view.js" defer></script>
@@ -102,73 +103,61 @@
           <h1>みんなの予定</h1>
         </div>
         <div class="account-tools">
-          <span id="save-status" role="status">このブラウザーに保存</span
-          ><button id="install-app" hidden>アプリをインストール</button
-          ><button id="update-app" hidden>最新版に更新</button
-          ><button id="copy-link" hidden>組織URLをコピー</button>
-          <button id="company-button" class="account-button" aria-label="組織・アカウント" title="組織・アカウント" aria-haspopup="dialog" hidden>
+          <span id="save-status" class="sr-only" role="status">このブラウザーに保存</span>
+          <div class="toolbar-history">
+            <button id="undo" title="元に戻す（Ctrl+Z）" disabled>↶ 元に戻す</button>
+            <button id="redo" aria-label="やり直す" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button>
+          </div>
+          <details class="toolbar-menu" id="add-menu">
+            <summary><span class="menu-lines" aria-hidden="true"><i></i><i></i><i></i></span>追加</summary>
+            <div class="toolbar-menu-panel">
+              <span class="place-add-control"><button id="add-person">＋ 人を追加</button><span id="place-help" class="place-help" hidden>
+                <button type="button" aria-label="場所・外部予定の説明" aria-expanded="false" aria-controls="place-help-text">ⓘ</button>
+                <span id="place-help-text" class="place-help-text">教室・施設・打ち合わせ先の空き時間を登録できます。グループに加えると共通の空き時間に含まれ、MTG登録時にその時間を確保します。</span>
+              </span></span>
+              <button id="add-group">＋ グループを追加</button>
+              <button id="add-manual-person" hidden>＋ 人を追加</button>
+            </div>
+          </details>
+          <button id="google-import-button" aria-haspopup="dialog" aria-controls="google-import-dialog">Googleカレンダーから取り込む</button>
+          <details class="toolbar-menu" id="export-menu">
+            <summary><span class="menu-lines" aria-hidden="true"><i></i><i></i><i></i></span>書き出し</summary>
+            <div class="toolbar-menu-panel">
+              <button id="export-availability" aria-haspopup="dialog">可能時間書き出し</button>
+              <button id="export-meetings" aria-haspopup="dialog" aria-controls="meeting-export-dialog">MTG書き出し</button>
+              <button id="print-button" aria-haspopup="dialog">PDF出力</button>
+            </div>
+          </details>
+          <button id="install-app" hidden>アプリをインストール</button>
+          <button id="update-app" hidden>最新版に更新</button>
+          <button id="company-button" class="account-button" aria-label="アカウント" title="アカウント" aria-haspopup="dialog" hidden>
             <svg class="account-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="9" r="3"/><path d="M5.5 19c.8-3.2 3-4.8 6.5-4.8s5.7 1.6 6.5 4.8"/></svg>
           </button>
         </div>
       </header>
       <p id="pwa-status" class="connection-notice" role="status" hidden></p>
-      <p
-        id="connection-status"
-        class="connection-notice"
-        role="status"
-        hidden
-      ></p>
-      <section class="toolbar" aria-label="表示と編集">
+      <p id="connection-status" class="connection-notice" role="status" hidden></p>
+      <section class="toolbar schedule-toolbar" aria-label="表示と編集">
         <div class="date-tools">
-          <button id="previous-week" aria-label="前の週" title="前の週へ">
-            ≪</button
-          ><button id="previous" aria-label="前の日" title="前の日へ">‹</button
-          ><button type="button" id="date-select" class="date-picker-trigger" aria-label="日付を選択" aria-haspopup="dialog" aria-controls="date-picker">日付を選択</button
-          ><button id="next" aria-label="次の日" title="次の日へ">›</button
-          ><button id="next-week" aria-label="次の週" title="次の週へ">≫</button
-          ><span class="member-count">16人</span>
+          <button id="previous-week" aria-label="前の週" title="前の週へ">≪</button>
+          <button id="previous" aria-label="前の日" title="前の日へ">‹</button>
+          <button type="button" id="date-select" class="date-picker-trigger" aria-label="日付を選択" aria-haspopup="dialog" aria-controls="date-picker">日付を選択</button>
+          <button id="next" aria-label="次の日" title="次の日へ">›</button>
+          <button id="next-week" aria-label="次の週" title="次の週へ">≫</button>
+          <select id="desktop-entry-person" aria-label="入力する人・場所" hidden></select>
+          <span class="member-count"></span>
         </div>
-        <div class="actions">
-          <button id="undo" title="元に戻す（Ctrl+Z）" disabled>
-            ↶ 元に戻す</button
-          ><button id="redo" title="やり直す（Ctrl+Shift+Z）" disabled>↷</button
-          ><button id="print-button">PDF出力</button
-          ><button id="export-availability" class="primary">
-            可能時間書き出し
-          </button>
-          <button id="export-meetings" aria-haspopup="dialog" aria-controls="meeting-export-dialog">MTG一括書き出し</button>
+        <button id="group-view-button" aria-haspopup="dialog">▾ 表示グループ</button>
+        <details id="bulk-exclude" class="toolbar-menu">
+          <summary>一括除外</summary>
+          <div class="toolbar-menu-panel bulk-options"></div>
+        </details>
+        <div class="schedule-view-switch" aria-label="予定表の切り替え">
+          <button type="button" id="desktop-entry-view" aria-pressed="false">予定入力表</button>
+          <button type="button" id="desktop-schedule-view" aria-pressed="true">予定管理表</button>
         </div>
       </section>
-      <div class="roster-toolbar">
-        <span class="place-add-control"><button id="add-person">＋ 人を追加</button><span id="place-help" class="place-help" hidden>
-          <button type="button" aria-label="場所・外部予定の説明" aria-expanded="false" aria-controls="place-help-text">ⓘ</button>
-          <span id="place-help-text" class="place-help-text">教室・施設・打ち合わせ先の空き時間を登録できます。グループに加えると共通の空き時間に含まれ、MTG登録時にその時間を確保します。</span>
-        </span></span><button id="add-group">＋ グループを追加</button
-        ><button
-          id="google-import-button"
-          aria-haspopup="dialog"
-          aria-controls="google-import-dialog"
-        >
-          Googleカレンダーから取り込む</button
-        ><button id="group-view-button" aria-haspopup="dialog">表示グループ ▾</button><button
-          id="hint-button"
-          class="hint-button"
-          aria-haspopup="dialog"
-          aria-controls="hint-dialog"
-        >
-          💡ヒント
-        </button>
-      </div>
-      <div
-        class="sr-only row-drag-status"
-        id="row-drag-status"
-        role="status"
-      ></div>
-      <div class="chart-caption">
-        <span
-          ><i class="legend"></i>可能時間<span id="day-summary"></span
-        ></span>
-      </div>
+      <div class="sr-only row-drag-status" id="row-drag-status" role="status"></div>
       <div class="chart-panel" id="chart-panel">
         <button
           id="fullscreen-button"
@@ -197,13 +186,7 @@
           <div id="chart" class="chart"></div>
         </div>
       </div>
-      <footer>
-        <span id="week-range"></span
-        ><span>空き枠をクリックで30分追加 · 両端を重ねて削除</span>
-      </footer>
-      <p class="storage-note" id="storage-note">
-        変更はこの端末の同じブラウザーに保存されます。ブラウザーの保存データを削除すると、編集内容も消えます。
-      </p>
+      <div id="desktop-entry" class="month-layout" hidden></div>
     </main>
     <dialog id="date-picker" aria-labelledby="date-picker-title">
       <div class="dialog-heading">
@@ -234,66 +217,6 @@
         <p id="duplicate-warning" role="alert" tabindex="-1" hidden></p>
       </div>
     </dialog>
-    <dialog id="hint-dialog" aria-labelledby="hint-title">
-      <div class="dialog-heading">
-        <h2 id="hint-title">💡ヒント</h2>
-        <button
-          type="button"
-          class="icon-button"
-          id="close-hint"
-          aria-label="ヒントを閉じる"
-        >
-          ×
-        </button>
-      </div>
-      <ul class="hint-list">
-        <li>名前をクリックすると、編集・削除できます。</li>
-        <li>グループ名の左の矢印で、折りたたみ・展開できます。</li>
-        <li>
-          名前の左の「⋮⋮」をドラッグすると、人やグループを並べ替えられます。
-        </li>
-        <li>人をグループへドラッグすると、所属を追加できます。</li>
-        <li>
-          グループ内の人を未所属の行や表の末尾へドラッグすると、そのグループへの所属だけを解除します。
-        </li>
-        <li>
-          個人の空き枠をクリックすると30分追加、ドラッグすると範囲を指定して追加できます。
-        </li>
-        <li>
-          個人の可能時間はドラッグで移動・伸縮できます。帯の途中をダブルクリックすると、最も近い30分の境界で分割できます。両端を重ねて離すと削除できます。
-        </li>
-        <li>
-          可能時間やグループのMTGを右クリックまたは長押しし、「他の日に複製」を選ぶと、月間カレンダーで選んだ複数の日に登録できます。登録できなかった日には⚠を表示します。
-        </li>
-        <li>
-          グループには対象者全員の共通時間を表示します。人の横の✓で一時除外すると、名前に取り消し線が付きます。この設定は端末内だけに保存します。
-        </li>
-        <li>
-          グループの可能時間上をクリックすると30分、ドラッグすると選択範囲が対象者のMTGになります。可能時間からはみ出した範囲は登録できません。
-        </li>
-        <li>
-          グループの可能時間の両端を縮める操作でも、減らした部分がMTGになります。可能時間の追加・移動はできません。
-        </li>
-        <li>
-          グループのMTGは両端をドラッグで拡張・短縮、帯の中央をドラッグで長さを保って移動できます。登録済みの対象者全員の可能時間内で調整し、空いた時間は復元します。範囲外の変更は警告して取り消します。クリックしたときの✖で一人ずつ解除もできます。
-        </li>
-        <li>
-          MTG帯を長押しすると操作メニューが開きます。グループの「削除」は対象者全員、個人の「削除」はその人だけの可能時間を復元します。グループでは「時間をコピー」も使えます。
-        </li>
-        <li>
-          MTGと重なる個人の可能時間は追加できません。Google取込でもMTGを保持します。
-        </li>
-        <li>
-          「MTG一括書き出し」でグループと期間を選ぶと、同じグループ・対象者のMTGを日付ごとにまとめてコピーできます。別グループとの間だけ1行空けます。
-        </li>
-        <li>
-          「アプリをインストール」またはブラウザーのメニューから、TOKIを端末に追加できます。iPhone・iPadでは共有メニューの「ホーム画面に追加」を使います。
-        </li>
-        <li>
-          オフラインでは最後に取得した共有予定を閲覧できます。編集は接続が戻ってから行ってください。
-        </li>
-      </ul>
-    </dialog>
     <dialog
       id="meeting-menu"
       aria-labelledby="meeting-menu-title"
@@ -311,6 +234,7 @@
         </button>
       </div>
       <p id="meeting-menu-time"></p>
+      <p id="meeting-menu-creator" hidden></p>
       <p id="meeting-menu-scope"></p>
       <div id="meeting-time-adjustment"></div>
       <button id="delete-meeting" class="danger">削除</button
@@ -443,7 +367,7 @@
         </div>
         <label for="roster-name" id="roster-name-label">名前</label
         ><input id="roster-name" maxlength="40" required autocomplete="off" />
-        <fieldset class="membership">
+        <fieldset class="membership" id="roster-membership">
           <legend id="membership-label">所属グループ（複数選択可）</legend>
           <div id="membership-options"></div>
         </fieldset>
@@ -455,12 +379,13 @@
           ><button type="button" id="cancel-remove">戻る</button>
         </div>
         <div class="dialog-actions">
+          <button type="button" id="roster-access" hidden>閲覧権限</button>
           <button type="button" id="detach-place" hidden>このグループから外す</button>
           <button type="button" id="remove-row" class="danger" hidden>
             削除</button
           ><span></span
           ><button type="button" id="cancel-roster">キャンセル</button
-          ><button type="submit" class="primary">保存</button>
+          ><button type="submit" id="roster-submit" class="primary">保存</button>
         </div>
       </form>
     </dialog>
@@ -484,54 +409,111 @@
       <button id="group-view-apply" class="primary">適用</button>
     </dialog>
     <dialog id="company-dialog" aria-labelledby="company-dialog-title">
-      <div class="dialog-heading"><h2 id="company-dialog-title">組織・アカウント</h2><button id="company-dialog-close" aria-label="組織設定を閉じる">×</button></div>
-      <p id="company-dialog-user"></p><p id="company-dialog-code-row">組織コード：<strong id="company-dialog-code" class="company-code"></strong></p>
-      <div class="company-actions"><button id="company-switch">組織を切り替える</button><button id="company-dialog-logout">ログアウト</button></div>
-      <p class="import-help">ログアウトすると、この利用者の端末に保存した予定を消去します。アクセス停止後も、オフライン端末の保存済みデータは即時には消去できません。</p>
-      <p id="company-admin-status" role="status"></p>
+      <header class="dialog-heading company-dialog-heading"><h2 id="company-dialog-title">アカウント</h2><button id="company-dialog-close" aria-label="アカウントを閉じる">×</button></header>
+      <div class="company-session">
+        <p id="company-dialog-user"></p>
+        <button id="company-guest-login" type="button" hidden>Googleでログイン</button>
+        <button id="company-dialog-logout" type="button">ログアウト</button>
+      </div>
+      <p id="company-current-organization"></p>
+      <details id="company-organization-picker" class="company-disclosure" hidden>
+        <summary id="company-organization-summary"></summary>
+        <div id="company-other-organizations"></div>
+      </details>
+      <p id="company-admin-status" class="sr-only" role="status"></p>
       <p id="company-admin-error" class="error" role="alert" tabindex="-1"></p>
-      <section id="company-admin" hidden><fieldset id="company-admin-controls"><h3>参加者の管理</h3>
-        <p class="import-help">管理者は複数人に設定できます。最後の管理者は、一般メンバーへの変更・アクセス停止ができません。管理を引き継ぐ場合は、先に相手を管理者に変更してください。</p>
-        <div id="company-members"></div>
-        <section id="company-pin-invites" hidden>
-          <h3>招待パスワードの一括発行</h3>
-          <label for="company-invite-names">予定表の表示名（1行に1人）</label>
-          <textarea id="company-invite-names" rows="3" maxlength="1230"></textarea>
-          <div id="company-invite-groups"></div>
-          <button id="company-issue-pins" type="button">まとめて発行</button>
-          <section id="company-issued-pins" hidden>
-            <h4>今回発行した招待</h4>
-            <p class="import-help">招待パスワードはここで一度だけ表示します。招待する本人に個別に送ってください。</p>
-            <div id="company-issued-messages"></div>
-            <button id="company-copy-pins" type="button">全部コピー</button>
-            <span id="company-pin-status" role="status"></span>
-          </section>
-          <h4>未使用の招待</h4>
-          <div id="company-unused-pins"></div>
-        </section>
-        <section id="company-legacy-invite" hidden><h3>メールアドレスで招待</h3>
-        <p class="import-help">登録したGoogleアカウントでログインすると参加できます。有効期間は7日間。メールは自動送信されません。組織URLを別途伝えてください。</p>
-        <div class="company-form"><label for="company-invite-email">招待先のGoogleメールアドレス</label><input id="company-invite-email" type="email" autocomplete="off" />
-          <label id="company-invite-name-label" for="company-invite-name" hidden>予定表の表示名</label><input id="company-invite-name" maxlength="40" autocomplete="off" hidden />
-          <button id="company-invite-button">招待を登録</button></div></section>
-        <div id="company-invites"></div>
-        <section id="company-guest-section" hidden>
-          <h3>ログイン不要のゲスト招待</h3>
-          <form id="company-guest-form" class="company-form">
-            <label for="company-guest-name">予定表の表示名</label>
-            <input id="company-guest-name" maxlength="40" autocomplete="off" required>
-            <div id="company-guest-choices"></div>
-            <button type="submit">ゲスト招待リンクを発行</button>
-          </form>
-          <div id="company-guest-output" hidden>
-            <label for="company-guest-link">発行した招待リンク</label>
-            <textarea id="company-guest-link" rows="3" readonly></textarea>
-            <button type="button" id="company-copy-guest">招待リンクをコピー</button>
-            <span id="company-guest-copy-status" role="status"></span>
-          </div>
-          <div id="company-guests"></div>
-        </section>
-      </fieldset></section>
+      <details id="company-admin" class="company-disclosure" hidden>
+        <summary>表示中組織の管理者設定</summary>
+        <fieldset id="company-admin-controls">
+          <details class="company-disclosure">
+            <summary>参加者の管理</summary>
+            <details class="company-disclosure"><summary>管理者</summary>
+              <small class="import-help">一般メンバーへの変更は管理者が2名以上のときにできます。</small>
+              <div id="company-admins"></div>
+            </details>
+            <details class="company-disclosure"><summary>一般メンバー</summary><div id="company-members"></div><div id="company-pending"></div></details>
+            <details class="company-disclosure"><summary>ゲスト</summary>
+              <div id="company-guests"></div>
+              <div id="company-guest-output" hidden>
+                <label for="company-guest-link">発行した追加リンク</label>
+                <textarea id="company-guest-link" rows="3" readonly></textarea>
+                <button type="button" id="company-copy-guest">追加リンクをコピー</button>
+                <span id="company-guest-copy-status" role="status"></span>
+              </div>
+            </details>
+          </details>
+          <details class="company-disclosure">
+            <summary>招待の管理</summary>
+            <details class="company-disclosure"><summary>組織コード共有</summary>
+              <button id="copy-link" type="button">URLをコピー</button>
+              <p id="company-dialog-code-row">組織コード：<strong id="company-dialog-code" class="company-code"></strong></p>
+            </details>
+            <details class="company-disclosure" id="company-member-invitations">
+              <summary>一般メンバー招待</summary>
+              <section id="company-pin-invites" hidden>
+                <label for="company-invite-names">予定表の表示名（1行に1人）</label>
+                <textarea id="company-invite-names" rows="3" maxlength="4100"></textarea>
+          <details class="company-series">
+            <summary>連番一括作成</summary>
+            <div class="company-series-inputs">
+              <label>接頭辞<input id="company-invite-prefix" maxlength="10" placeholder="ID"></label>
+              <label>開始<input id="company-invite-from" inputmode="numeric" maxlength="15" placeholder="00"></label>
+              <label>終了<input id="company-invite-to" inputmode="numeric" maxlength="15" placeholder="23"></label>
+              <button id="company-invite-series" type="button">入力欄に追加</button>
+            </div>
+          </details>
+
+                <div id="company-invite-groups"></div>
+                <button id="company-issue-pins" type="button">まとめて発行</button>
+                <section id="company-issued-pins" hidden>
+                  <h4>今回発行した招待</h4>
+                  <div id="company-issued-messages"></div>
+                  <button id="company-copy-pins" type="button">全部コピー</button>
+                  <span id="company-pin-status" role="status"></span>
+                </section>
+                <h4>未使用の招待</h4>
+                <div id="company-unused-pins"></div>
+              </section>
+              <section id="company-legacy-invite" hidden>
+                <div class="company-form"><label for="company-invite-email">招待先のGoogleメールアドレス</label><input id="company-invite-email" type="email" autocomplete="off">
+                  <label id="company-invite-name-label" for="company-invite-name" hidden>予定表の表示名</label><input id="company-invite-name" maxlength="40" autocomplete="off" hidden>
+                  <button id="company-invite-button" type="button">招待を登録</button>
+                </div>
+              </section>
+              <div id="company-invites"></div>
+            </details>
+            <details class="company-disclosure" id="company-guest-section" hidden>
+              <summary>ゲスト招待</summary>
+              <form id="company-guest-form">
+                <label for="company-guest-name">予定表の表示名（1行に1人）</label>
+                <textarea id="company-guest-name" rows="3" maxlength="4100"></textarea>
+          <details class="company-series">
+            <summary>連番一括作成</summary>
+            <div class="company-series-inputs">
+              <label>接頭辞<input id="company-guest-prefix" maxlength="10" placeholder="ID"></label>
+              <label>開始<input id="company-guest-from" inputmode="numeric" maxlength="15" placeholder="00"></label>
+              <label>終了<input id="company-guest-to" inputmode="numeric" maxlength="15" placeholder="23"></label>
+              <button id="company-guest-series" type="button">入力欄に追加</button>
+            </div>
+          </details>
+
+                <div id="company-guest-choices"></div>
+                <button type="submit">まとめて発行</button>
+              </form>
+              <section id="company-issued-guests" hidden>
+                <h4>今回発行した招待</h4>
+                <div id="company-guest-messages"></div>
+                <button id="company-copy-guests" type="button">全部コピー</button>
+                <span id="company-guests-status" role="status"></span>
+              </section>
+            </details>
+          </details>
+        </fieldset>
+      </details>
+      <p id="company-admin-help" class="import-help" hidden>※別組織の設定は、対象の組織を開いてから変更できます。</p>
+      <p id="company-probation-note" class="import-help" hidden></p>
+      <section id="company-review-actions" hidden></section>
+      <button id="company-switch" type="button" hidden>別の組織に参加</button>
     </dialog>
     <dialog id="google-import-dialog" aria-labelledby="google-import-title">
       <div class="dialog-heading">
@@ -552,19 +534,19 @@
       ><select id="google-import-person"></select>
       <div class="form-grid">
         <div>
-          <label for="google-time-min">取得開始（timeMin）</label
+          <label for="google-time-min">取得開始日</label
           ><input
             id="google-time-min"
-            type="datetime-local"
+            type="date"
             step="60"
             required
           />
         </div>
         <div>
-          <label for="google-time-max">取得終了（timeMax）</label
+          <label for="google-time-max">取得終了日</label
           ><input
             id="google-time-max"
-            type="datetime-local"
+            type="date"
             step="60"
             required
           />

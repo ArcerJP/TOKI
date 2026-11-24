@@ -33,6 +33,30 @@
     const person=Number(key.slice(2));if(!Number.isInteger(person)||!board.people[person])throw Error('人を選択してください。');
     return personBands(board,person,date);
   }
+  function bulkExclusions(board,group,date,modes,manual=[]){
+    const people=group.members.filter(person=>board.rows?.[person]?.kind!=='place');
+    if(modes.has('all'))return people.map(person=>board.people[person]);
+    const daily=new Map(group.members.map(person=>[person,personRanges(board,person,date)]));
+    const excluded=new Set(modes.has('unavailable')?people.filter(person=>!daily.get(person).length):[]);
+    const fewest=modes.has('least');
+    if(fewest||modes.has('most')){
+      const places=group.members.filter(person=>board.rows?.[person]?.kind==='place'&&!manual.includes(board.people[person]));
+      const eligible=people.filter(person=>!manual.includes(board.people[person]));
+      const boundaries=[...new Set([...daily.values()].flatMap(ranges=>ranges.flatMap(range=>[range.start,range.end])))].sort((a,b)=>a-b);
+      const covers=(person,start,end)=>daily.get(person).some(range=>range.start<=start&&range.end>=end);
+      let count=null,matching=new Set();
+      for(let i=0;i<boundaries.length-1;i++){
+        const start=boundaries[i],end=boundaries[i+1];
+        if(!places.every(person=>covers(person,start,end)))continue;
+        const available=eligible.filter(person=>covers(person,start,end));
+        if(!available.length)continue;
+        if(count===null||(fewest?available.length<count:available.length>count)){count=available.length;matching=new Set();}
+        if(available.length===count)available.forEach(person=>matching.add(person));
+      }
+      if(count!==null)eligible.filter(person=>!matching.has(person)).forEach(person=>excluded.add(person));
+    }
+    return [...excluded].map(person=>board.people[person]);
+  }
   function writePerson(board,person,date,values,makeId=id,extraCuts=[]){
     if(!Number.isInteger(person)||!board.people[person]||!M.validDate(date))throw Error('人と日付を確認してください。');
     const cuts=[...splitBoundaries(personEvents(board,person,date)),...extraCuts];
@@ -41,9 +65,6 @@
   }
   function editPerson(board,person,date,removed=[],added=[],makeId=id){
     const next=M.clone(board);writePerson(next,person,date,[...A.subtract(personRanges(next,person,date),removed),...added],makeId);return check(next);
-  }
-  function movePersonRange(board,person,target,date,from,to,makeId=id){
-    let next=editPerson(board,person,date,[from],[],makeId);return editPerson(next,target,date,[],[to],makeId);
   }
   const sameTime=(left,right)=>left.start===right.start&&left.end===right.end;
   function splitPerson(board,person,date,range,minute,makeId=id){
@@ -111,7 +132,7 @@
       if(!Number.isInteger(a)||!Number.isInteger(b)||a<meeting.start||b>meeting.end||a>b)throw Error('MTGは短縮・解除のみできます。');
       members=[...meeting.members];freed=A.subtract([meeting],a<b?[{start:a,end:b}]:[]);meeting.start=a;meeting.end=b;
     }
-    next.meetings=next.meetings.filter(m=>m.members.length&&m.start<m.end);
+    next.meetings=next.meetings.filter(m=>(m.members.length||m.limitedParticipants)&&m.start<m.end);
     for(const p of members)writePerson(next,p,meeting.date,[...personRanges(next,p,meeting.date),...freed],makeId);
     return check(next);
   }
@@ -121,7 +142,11 @@
     // The original reservation is reusable only by its fixed participants.
     return meeting.members.map(person=>({person,values:A.subtract([...personRanges(board,person,meeting.date),meeting],meetingsFor(board,person,meeting.date).filter(m=>m.id!==meetingId))}));
   }
-  function meetingAvailability(board,meetingId){return A.common(meetingMemberRanges(board,meetingId).map(member=>member.values));}
+  function meetingAvailability(board,meetingId){
+    const members=meetingMemberRanges(board,meetingId);
+    // A scoped board with no visible participants defers the range check to the server.
+    return members.length?A.common(members.map(member=>member.values)):[{start:480,end:1440}];
+  }
   function meetingDragRange(meeting,mode,origin,cursor){
     const snap=value=>Math.round(value/30)*30;
     if(mode==='move'){const delta=snap(cursor-origin);return {start:meeting.start+delta,end:meeting.end+delta};}
@@ -133,7 +158,7 @@
     if(!Number.isInteger(start)||!Number.isInteger(end)||start<480||end>1440||start>end)throw Error('⚠️可能時間がありません');
     const members=meetingMemberRanges(board,meetingId);
     if(start===end)return release(board,meetingId,{},makeId);
-    if(A.subtract([{start,end}],A.common(members.map(member=>member.values))).length)throw Error('⚠️可能時間がありません');
+    if(members.length&&A.subtract([{start,end}],A.common(members.map(member=>member.values))).length)throw Error('⚠️可能時間がありません');
     const next=M.clone(board),meeting=next.meetings.find(m=>m.id===meetingId);
     meeting.start=start;meeting.end=end;
     for(const {person,values} of members)writePerson(next,person,meeting.date,values,makeId);
@@ -151,7 +176,7 @@
     checkExportDates(first,last);
     const lines=[];
     for(let date=first;date&&date<=last;date=M.shiftDate(date,1)){
-      const values=ranges(board,key,date,excluded);lines.push(A.formatDay(date,values)+(values.length?'':'なし'));
+      const values=ranges(board,key,date,typeof excluded==='function'?excluded(date):excluded);lines.push(A.formatDay(date,values)+(values.length?'':'なし'));
     }
     return lines.join('\n');
   }
@@ -184,6 +209,6 @@
       if(key===group)return `hsl(${hue} 55% 35%)`;
     }
   }
-  const api={migrate,participants,personRanges,personBands,ranges,editPerson,movePersonRange,splitPerson,meetingSelection,reserve,duplicateDates,release,meetingAvailability,meetingDragRange,adjustMeeting,removeGroup,exportText,exportMeetings,color};
+  const api={migrate,participants,personRanges,personBands,ranges,bulkExclusions,editPerson,splitPerson,meetingSelection,reserve,duplicateDates,release,meetingAvailability,meetingDragRange,adjustMeeting,removeGroup,exportText,exportMeetings,color};
   if(node)module.exports=api;else window.TokiSchedule=api;
 })();

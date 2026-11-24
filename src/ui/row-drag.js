@@ -1,13 +1,13 @@
 "use strict";
 // Row dragging uses its own handles, leaving schedule dragging unchanged.
-window.TokiRowDrag = ({scroll,board,canStart,commit,settled,notify,moveBetweenGroups=false}) => {
+window.TokiRowDrag = ({scroll,board,canStart,commit,settled,notify,moveBetweenGroups=false,rowSelector='.person-row',longPress=false}) => {
   const M=window.TokiModel,status=document.getElementById('row-drag-status'),idleText=status.textContent;
   let state=null,frame=0,marked=null;
   function clearMark(){marked?.classList.remove('row-drop-before','row-drop-after','row-drop-inside');marked=null;}
   function targetAt(x,y){
     const hit=document.elementFromPoint(x,y);if(!hit)return null;
     if(state.group){
-      const row=hit.closest('.person-row'),bottom=hit.closest('.bottom-add-row');if(!scroll.contains(hit)||!row&&!bottom)return null;
+      const row=hit.closest(rowSelector),bottom=hit.closest('.bottom-add-row');if(!scroll.contains(hit)||!row&&!bottom)return null;
       const target=row?.dataset.group||row?.dataset.context||null;if(target===state.group)return null;
       const after=target?(!row.dataset.group||y>row.getBoundingClientRect().top+row.getBoundingClientRect().height/2):false;
       const name=board().groups.find(g=>g.id===target)?.name;
@@ -15,7 +15,7 @@ window.TokiRowDrag = ({scroll,board,canStart,commit,settled,notify,moveBetweenGr
     }
     const leaveLabel=state.source?'元のグループへの所属だけ解除（他の所属は保持）':null;
     if(hit.closest('.bottom-add-row'))return {node:hit.closest('.bottom-add-row'),options:{group:null,source:state.source},label:leaveLabel||'未所属の末尾へ',style:'row-drop-inside'};
-    const row=hit.closest('.person-row');if(!row||!scroll.contains(row))return null;
+    const row=hit.closest(rowSelector);if(!row||!scroll.contains(row))return null;
     const group=row.dataset.context||null;
     if(row.dataset.group)return {node:row,options:{group:row.dataset.group,source:state.source,move:moveBetweenGroups},label:row.dataset.name+'に'+(moveBetweenGroups&&state.source!==row.dataset.group?'移動':'所属を追加'),style:'row-drop-inside'};
     const person=Number(row.dataset.person);if(person===state.person&&group===state.source)return null;
@@ -28,19 +28,81 @@ window.TokiRowDrag = ({scroll,board,canStart,commit,settled,notify,moveBetweenGr
     const text=state.target?.label||'移動先へドラッグ（Escでキャンセル）';if(status.textContent!==text)status.textContent=text;
   }
   function autoScroll(){if(!state?.moved)return;const rect=scroll.getBoundingClientRect();if(state.x>=rect.left&&state.x<=rect.right&&state.y>=rect.top+65&&state.y<=rect.bottom){let dy=0;if(state.y<rect.top+100)dy=-9;else if(state.y>rect.bottom-45)dy=9;if(dy){scroll.scrollTop+=dy;update();}}frame=requestAnimationFrame(autoScroll);}
-  function cancel(apply=true){if(!state)return;const previous=state;state=null;cancelAnimationFrame(frame);clearMark();previous.ghost?.remove();previous.row.classList.remove('row-drag-source');document.body.classList.remove('row-dragging');try{previous.handle.releasePointerCapture(previous.pointer);}catch{}status.textContent=idleText;if(apply)settled();}
-  scroll.addEventListener('pointerdown',event=>{const handle=event.target.closest('.row-drag-handle');if(!handle||event.button!==0||!canStart()||state)return;event.preventDefault();event.stopPropagation();handle.focus();const row=handle.closest('.person-row');state={handle,row,group:row.dataset.group||null,person:Number(row.dataset.person),source:row.dataset.context||null,pointer:event.pointerId,startX:event.clientX,startY:event.clientY,x:event.clientX,y:event.clientY,moved:false};handle.setPointerCapture(event.pointerId);});
-  document.addEventListener('pointermove',event=>{if(!state||state.pointer!==event.pointerId)return;state.x=event.clientX;state.y=event.clientY;if(!state.moved){if(Math.hypot(state.x-state.startX,state.y-state.startY)<5)return;state.moved=true;document.body.classList.add('row-dragging');state.row.classList.add('row-drag-source');const ghost=document.createElement('div');ghost.className='row-drag-ghost';ghost.textContent=state.row.dataset.name;document.body.append(ghost);state.ghost=ghost;frame=requestAnimationFrame(autoScroll);}event.preventDefault();update();},{passive:false});
-  document.addEventListener('pointerup',async event=>{if(!state||state.pointer!==event.pointerId)return;const current=state;if(current.moved)update();const target=current.moved?current.target:null;cancel(false);if(target){try{const before=board(),next=current.group?M.reorderGroup(before,current.group,target.options.target,target.options.after):M.placePerson(before,current.person,target.options);if(JSON.stringify(next)!==JSON.stringify(before))await commit(next,target.label);}catch(error){notify(error.message);}}settled();});
+  function cancel(apply=true){
+    if(!state)return;
+    const previous=state;state=null;clearTimeout(previous.timer);cancelAnimationFrame(frame);clearMark();
+    previous.ghost?.remove();previous.row.classList.remove('row-drag-source','row-drag-armed');
+    document.body.classList.remove('row-dragging');
+    try{previous.handle.releasePointerCapture(previous.pointer);}catch{}
+    status.textContent=idleText;if(apply)settled();
+  }
+  function start(handle,point,id,touch){
+    const row=handle.closest(rowSelector);
+    state={handle,row,group:row.dataset.group||null,person:Number(row.dataset.person),source:row.dataset.context||null,
+      pointer:id,touch,startX:point.clientX,startY:point.clientY,x:point.clientX,y:point.clientY,held:!touch,moved:false};
+    if(touch)state.timer=setTimeout(()=>{if(state?.handle!==handle||!canStart())return;state.held=true;row.classList.add('row-drag-armed');},450);
+  }
+  function move(point,event){
+    state.x=point.clientX;state.y=point.clientY;
+    const distance=Math.hypot(state.x-state.startX,state.y-state.startY);
+    if(!state.held){if(distance>=8)cancel();return;}
+    if(state.touch&&!event.cancelable){cancel();return;}
+    if(!state.moved){
+      if(distance<5)return;
+      state.moved=true;document.body.classList.add('row-dragging');state.row.classList.add('row-drag-source');
+      const ghost=document.createElement('div');ghost.className='row-drag-ghost';ghost.textContent=state.row.dataset.name;
+      document.body.append(ghost);state.ghost=ghost;frame=requestAnimationFrame(autoScroll);
+    }
+    event.preventDefault();update();
+  }
+  async function finish(){
+    const current=state;if(current.moved)update();
+    const target=current.moved?current.target:null;cancel(false);
+    if(target){
+      try{
+        const before=board(),next=current.group?M.reorderGroup(before,current.group,target.options.target,target.options.after):M.placePerson(before,current.person,target.options);
+        if(JSON.stringify(next)!==JSON.stringify(before))await commit(next,target.label);
+      }catch(error){notify(error.message);}
+    }
+    settled();
+  }
+  scroll.addEventListener('pointerdown',event=>{
+    const handle=event.target.closest('.row-drag-handle');
+    if(!handle||event.button!==0||(longPress&&event.pointerType==='touch')||!canStart()||state)return;
+    event.preventDefault();event.stopPropagation();handle.focus();start(handle,event,event.pointerId,false);
+    try{handle.setPointerCapture(event.pointerId);}catch{}
+  });
+  document.addEventListener('pointermove',event=>{if(state&&!state.touch&&state.pointer===event.pointerId)move(event,event);},{passive:false});
+  document.addEventListener('pointerup',event=>{if(state&&!state.touch&&state.pointer===event.pointerId)void finish();});
+  if(longPress){
+    const options={passive:false};
+    scroll.addEventListener('touchstart',event=>{
+      if(event.touches.length>1){if(state?.touch)cancel();return;}
+      const handle=event.target.closest('.row-drag-handle');
+      if(handle&&!state&&canStart())start(handle,event.touches[0],event.touches[0].identifier,true);
+    },options);
+    scroll.addEventListener('touchmove',event=>{
+      if(!state?.touch)return;
+      const finger=[...event.touches].find(point=>point.identifier===state.pointer);
+      if(finger)move(finger,event);
+    },options);
+    scroll.addEventListener('touchend',event=>{
+      if(!state?.touch||![...event.changedTouches].some(point=>point.identifier===state.pointer))return;
+      if(state.moved&&event.cancelable)event.preventDefault();
+      void finish();
+    },options);
+    scroll.addEventListener('touchcancel',()=>cancel());
+    scroll.addEventListener('contextmenu',event=>{if(event.target.closest('.row-drag-handle'))event.preventDefault();});
+  }
   document.addEventListener('pointercancel',()=>cancel());window.addEventListener('blur',()=>cancel());
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&state){event.preventDefault();event.stopImmediatePropagation();cancel();}},true);
   scroll.addEventListener('keydown',async event=>{
     const handle=event.target.closest('.row-drag-handle');if(!handle||!['ArrowUp','ArrowDown'].includes(event.key)||!canStart())return;
-    event.preventDefault();event.stopPropagation();const row=handle.closest('.person-row'),person=Number(row.dataset.person),group=row.dataset.context||null,groupId=row.dataset.group,b=board();
+    event.preventDefault();event.stopPropagation();const row=handle.closest(rowSelector),person=Number(row.dataset.person),group=row.dataset.context||null,groupId=row.dataset.group,b=board();
     const list=groupId?b.groups.map(g=>g.id):group?b.groups.find(g=>g.id===group).members:b.people.map((_,i)=>i).filter(i=>!b.groups.some(g=>g.members.includes(i)));
     const at=list.indexOf(groupId||person),nextIndex=at+(event.key==='ArrowUp'?-1:1);if(nextIndex<0||nextIndex>=list.length)return;const name=b.people[person];
     try{const next=groupId?M.reorderGroup(b,groupId,list[nextIndex],nextIndex>at):M.placePerson(b,person,{group,target:list[nextIndex],after:nextIndex>at,source:group});await commit(next,'行の順番を変更しました');
-      const refreshed=board(),index=refreshed.people.indexOf(name);[...scroll.querySelectorAll('.row-drag-handle')].find(h=>{const r=h.closest('.person-row');return groupId?r.dataset.group===groupId:!r.dataset.group&&Number(r.dataset.person)===index&&(r.dataset.context||null)===group;})?.focus();
+      const refreshed=board(),index=refreshed.people.indexOf(name);[...scroll.querySelectorAll('.row-drag-handle')].find(h=>{const r=h.closest(rowSelector);return groupId?r.dataset.group===groupId:!r.dataset.group&&Number(r.dataset.person)===index&&(r.dataset.context||null)===group;})?.focus();
     }catch(error){notify(error.message);}
   });
   return {get active(){return state!==null;},cancel};

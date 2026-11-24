@@ -40,7 +40,10 @@
       new Set(board.rows.map(row=>row.id)).size!==board.rows.length))return false;
     const ids=new Set(board.events.map(e=>e.id));
     for(const m of board.meetings){
-      if(!m||typeof m.id!=='string'||!m.id.length||m.id.length>100||ids.has(m.id)||!board.groups.some(g=>g.id===m.group)||!validDate(m.date)||!Number.isInteger(m.start)||!Number.isInteger(m.end)||m.start<480||m.end>1440||m.start>=m.end||!Array.isArray(m.members)||!m.members.length||new Set(m.members).size!==m.members.length||m.members.some(p=>!Number.isInteger(p)||p<0||p>=board.people.length))return false;
+      if(!m||typeof m.id!=='string'||!m.id.length||m.id.length>100||ids.has(m.id)||!board.groups.some(g=>g.id===m.group)||!validDate(m.date)||!Number.isInteger(m.start)||!Number.isInteger(m.end)||m.start<480||m.end>1440||m.start>=m.end||!Array.isArray(m.members)||
+        (!m.members.length&&m.limitedParticipants!==true)||new Set(m.members).size!==m.members.length||m.members.some(p=>!Number.isInteger(p)||p<0||p>=board.people.length))return false;
+      if(Object.hasOwn(m,'creatorName')&&(typeof m.creatorName!=='string'||!m.creatorName.length||m.creatorName.length>40)||
+        Object.hasOwn(m,'limitedParticipants')&&m.limitedParticipants!==true)return false;
       ids.add(m.id);
     }
     return true;

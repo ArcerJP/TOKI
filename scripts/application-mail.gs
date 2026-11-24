@@ -36,6 +36,37 @@ function getTokiMailConfig(properties) {
   return {url, publishableKey};
 }
 
+function formatTokiMail(job) {
+  const organization = job.organization;
+  const actionUrl = job.company && job.related
+    ? TOKI_SITE + '?organization=' + encodeURIComponent(job.company) + '&review=' + encodeURIComponent(job.related)
+    : TOKI_SITE;
+  switch (job.kind) {
+    case 'promotion':
+      return {subject:'【TOKI】新しい管理者',lines:[
+        organization + 'の管理者に ' + job.label + ' が追加されました。',
+        '就任から7日間、対象の管理操作は翌朝のまとめ通知からレビューできます。',TOKI_SITE]};
+    case 'demotion':
+      return {subject:'【TOKI】管理者権限の変更を確認',lines:[
+        organization + 'で管理者から一般メンバーに変更されました。',
+        '以下からGoogleでログインし、変更を確認してください。変更から7日以内は同じアカウントで管理者に復帰できます。',actionUrl]};
+    case 'review':
+      return {subject:'【TOKI】新任管理者の操作まとめ',lines:[
+        organization + 'の ' + job.day + ' の変更一覧です。'+(job.label?' 操作者：'+job.label:''),
+        ...(job.items || []).map(item=>'・'+item),
+        'このメールの通知から24時間以内に、TOKIでこの日の変更を一括拒否できます。拒否がなければ反映します。',actionUrl]};
+    case 'rename':
+      return {subject:'【TOKI】名前の変更依頼',lines:[
+        organization + 'で名前の変更依頼が届きました。',job.old_name + ' → ' + job.new_name,
+        '以下で対象の組織を開き、「承認」で反映できます。',actionUrl]};
+    default:
+      return {subject:'【TOKI】組織への参加申請',lines:[
+        organization + 'への参加申請が届きました。','', '氏名：' + job.name,
+        'Googleメールアドレス：' + job.email,'','TOKIで申請を確認',TOKI_SITE,
+        '管理者アカウントで組織を開き、「アカウント」から申請を確認してください。']};
+  }
+}
+
 function sendTokiApplications() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return;
@@ -58,21 +89,13 @@ function sendTokiApplications() {
       properties.deleteProperty(TOKI_PENDING_ACK);
     };
     confirmDelivery();
+    rpc('sweep');
     const count = Math.min(20, MailApp.getRemainingDailyQuota());
     for (let index = 0; index < count; index++) {
-      const job = rpc('claim');
+      const job = rpc('claim_v2');
       if (!job) break;
-      const body = [
-        job.organization + 'への参加申請が届きました。',
-        '',
-        '氏名：' + job.name,
-        'Googleメールアドレス：' + job.email,
-        '',
-        'TOKIで申請を確認',
-        TOKI_SITE,
-        '管理者アカウントで組織を開き、「組織・アカウント」から申請を確認してください。'
-      ].join('\n');
-      MailApp.sendEmail({to:job.recipient,subject:'【TOKI】組織への参加申請',body,name:'TOKI'});
+      const mail = formatTokiMail(job);
+      MailApp.sendEmail({to:job.recipient,subject:mail.subject,body:mail.lines.join('\n'),name:'TOKI'});
       properties.setProperty(TOKI_PENDING_ACK, JSON.stringify({p_id:job.id,p_lease:job.lease}));
       confirmDelivery();
     }

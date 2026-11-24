@@ -1,5 +1,5 @@
 "use strict";
-window.TokiGoogleImportUI=({context,apply,selected,canOpen,canImportPerson=()=>true})=>{
+window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true,linkGuest})=>{
   const $=id=>document.getElementById(id),api=window.TokiGoogleCalendar,model=window.TokiCalendarImport;
   const dialog=$('google-import-dialog'),inputs=['google-import-person','google-time-min','google-time-max'];
   let loading=false,sdkReady=false,preview=null,base=null,operation=0,request=null;
@@ -7,7 +7,8 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen,canImportPerson=()=>t
   const error=message=>{$('google-import-error').textContent=message;};
   const invalidate=()=>{preview=null;$('google-import-preview').hidden=true;};
   function controls(){
-    $('google-login').disabled=loading||!sdkReady||!api.configured;
+    $('google-login').disabled=loading||(!linkGuest&&(!sdkReady||!api.configured));
+    $('google-login').title=linkGuest?'Googleでログインし、現在の予定を一般メンバーとして引き継ぎます。':'';
     $('google-login').textContent=api.connected?'Googleアカウントを変更':'Googleでログイン';
     $('google-logout').hidden=!api.connected;$('google-logout').disabled=loading;
     $('google-preview-button').disabled=loading||!api.connected||!listReady||!chosen.size||!canOpen();
@@ -50,11 +51,11 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen,canImportPerson=()=>t
       if(!canImportPerson(index))return;
       const option=document.createElement('option');option.value=index;option.textContent=name;$('google-import-person').append(option);
     });
-    const week=window.TokiModel.weekDates(selected()),end=window.TokiModel.shiftDate(week[6],1);
-    $('google-time-min').value=week[0]+'T00:00';$('google-time-max').value=end?end+'T00:00':week[6]+'T23:59';
+    const first=today(),M=window.TokiModel;
+    $('google-time-min').value=first;$('google-time-max').value=M.shiftDate(first,7)||M.MAX_DATE;
     error('');invalidate();resetCalendars();controls();dialog.showModal();
     const sequence=++operation;
-    try{await api.load();if(sequence!==operation)return;sdkReady=true;if(api.connected)await loadCalendars(sequence);}
+    try{if(!linkGuest){await api.load();if(sequence!==operation)return;sdkReady=true;if(api.connected)await loadCalendars(sequence);}}
     catch(failure){if(sequence===operation)error(failure.message);}
     finally{if(sequence===operation){loading=false;request=null;controls();}}
   };
@@ -63,6 +64,10 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen,canImportPerson=()=>t
   dialog.addEventListener('close',()=>{operation++;request?.abort();request=null;loading=false;preview=null;base=null;resetCalendars();});
   for(const id of inputs)$(id).addEventListener('input',()=>{invalidate();error('');controls();});
   $('google-login').onclick=async()=>{
+    if(linkGuest){
+      try{linkGuest(true);}catch(failure){error(failure.message);}
+      return;
+    }
     error('');invalidate();resetCalendars();const sequence=++operation;loading=true;controls();$('google-login-status').textContent='Googleログインを確認中…';
     try{await api.login();if(sequence!==operation)return;await loadCalendars(sequence);}catch(failure){if(sequence===operation)error(failure.message);}
     finally{if(sequence===operation){loading=false;request=null;controls();}}
@@ -95,7 +100,7 @@ window.TokiGoogleImportUI=({context,apply,selected,canOpen,canImportPerson=()=>t
   $('google-preview-button').onclick=async()=>{
     error('');invalidate();const sequence=++operation;
     try{
-      current();const range=model.period($('google-time-min').value,$('google-time-max').value),person=Number($('google-import-person').value);
+      current();const range=model.period($('google-time-min').value+'T00:00',$('google-time-max').value+'T00:00'),person=Number($('google-import-person').value);
       if(!$('google-import-person').value||!canImportPerson(person))throw Error('取り込み先の人を確認してください。');
       if(!listReady||!chosen.size)throw Error('取り込むカレンダーを1つ以上選択してください。');
       const calendarIds=calendars.filter(c=>chosen.has(c.id)).map(c=>c.id);

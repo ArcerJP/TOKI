@@ -69,6 +69,13 @@ test('company authorization enforced by PostgreSQL for every read and write',asy
     await rpc('role',{p_company:initial.id,p_member:users[2],p_role:'admin'});
     let members=(await rpc('members',{p_company:initial.id})).members;
     assert.deepEqual(members.filter(m=>m.status==='active'&&m.role==='admin').map(m=>m.id).sort(),[users[0],users[2]]);
+    await db.exec('reset role');
+    await db.query("update auth.users set banned_until=now()+interval '1 hour' where id=$1",[users[2]]);
+    await auth(0);
+    await assert.rejects(rpc('role',{p_company:initial.id,p_member:users[0],p_role:'member'}),/LAST_ADMIN/);
+    await db.exec('reset role');
+    await db.query("update auth.users set banned_until=null where id=$1",[users[2]]);
+    await auth(0);
     await rpc('role',{p_company:initial.id,p_member:users[0],p_role:'member'});
     await assert.rejects(rpc('members',{p_company:initial.id}),/DENIED/);
     await auth(2);await assert.rejects(rpc('role',{p_company:initial.id,p_member:users[2],p_role:'member'}),/LAST_ADMIN/);

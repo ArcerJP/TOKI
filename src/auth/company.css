@@ -12,15 +12,16 @@
 #company-entry small { display:block; margin-top:6px; color:#61766d; }
 #company-join { width:100%; margin-top:6px; }
 #company-pin-invites textarea { display:block; width:100%; margin:6px 0; resize:vertical; white-space:pre-wrap; }
-#company-guest-section { margin-block:22px; }
-#company-guest-choices { display:grid; gap:10px; }
+#company-guest-choices { margin-block:8px; }
 #company-guest-link { display:block; width:100%; margin:6px 0; overflow-wrap:anywhere; }
 #company-invite-groups { margin-block:8px; }
 #company-invite-groups details { padding:6px; }
 #company-issue-pins, #company-copy-pins, #company-issued-pins button { min-height:44px; }
 #company-issued-messages label { font-weight:600; overflow-wrap:anywhere; }
-.company-group-choices label { display:flex; align-items:center; gap:8px; min-height:36px; }
-.company-group-choices input { min-width:20px; height:20px; }
+.company-group-choices { min-width:0; padding:3px 8px 6px; margin:3px 0; border:1px solid #dce5e2; border-radius:7px; }
+.company-group-choices legend { font-size:12px; padding-inline:3px; }
+#company-dialog .company-group-choices label,.mob-dialog .company-group-choices label { display:grid; grid-template-columns:18px minmax(0,1fr); align-items:start; justify-content:start; gap:8px; padding:4px 0; margin:0; line-height:1.35; overflow-wrap:anywhere; cursor:pointer; }
+#company-dialog .company-group-choices input[type="checkbox"],.mob-dialog .company-group-choices input[type="checkbox"] { width:16px; min-width:16px; height:16px; margin:1px 0 0; padding:0; accent-color:var(--green); }
 .company-actions { display:flex; flex-wrap:wrap; gap:8px; margin-block:12px; }
 .company-choice { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-bottom:1px solid #dce5e2; }
 .company-choice span, .company-choice strong { overflow-wrap:anywhere; }
@@ -51,3 +52,33 @@
 .auth-card { width:min(100%,520px); }
 .auth-card #auth-message { color:#607870; }
 @media (max-width:767px) { #company-dialog, #group-view-dialog { width:calc(100% - 24px); max-height:calc(100dvh - 24px); padding:20px; } .company-choice { flex-wrap:wrap; } }
+#company-dialog { --account-pad:18px; padding:0 var(--account-pad) var(--account-pad); width:min(640px,calc(100vw - 20px)); }
+#company-dialog .company-dialog-heading { position:sticky; z-index:4; top:0; padding:10px var(--account-pad); margin:0 calc(-1 * var(--account-pad)) 10px; background:#fff; border-bottom:1px solid #e6eeea; }
+#company-dialog-close { min-width:44px; min-height:44px; }
+.company-session { display:flex; align-items:center; gap:8px; }
+.company-session p { flex:1; margin:0; min-width:0; overflow-wrap:anywhere; }
+.company-session button { white-space:nowrap; flex:none; }
+.company-disclosure { border:1px solid #dbe7e0; border-radius:8px; padding:5px 8px; margin:6px 0; }
+.company-disclosure > summary,.company-series > summary { cursor:pointer; padding:4px 0; font-weight:600; }
+#company-current-organization { font-weight:600; }
+#company-admin-help { margin:4px 0; }
+.company-member-id { display:flex; flex-wrap:wrap; gap:3px 10px; align-items:baseline; }
+.company-member .company-member-id { flex-basis:100%; }
+.company-member .company-member-id strong,.company-member .company-member-id span { flex-basis:auto; }
+.company-member .company-member-id span { color:#50685e; font-size:12px; }
+.company-member { padding:8px 0; }
+.company-guest-row { display:grid; grid-template-columns:minmax(38px,1fr) repeat(4,auto); align-items:center; gap:4px; padding:6px 0; border-bottom:1px solid #e1ebe6; }
+.company-guest-row strong { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.company-guest-row small,.company-guest-row button { white-space:nowrap; font-size:11px; }
+.company-guest-row button { padding:6px; min-height:36px; }
+.company-series-inputs { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto; align-items:end; gap:5px; }
+#company-dialog .company-series-inputs label { margin:2px 0; min-width:0; font-size:11px; }
+#company-dialog .company-series-inputs input { width:100%; min-width:0; padding:4px 5px; }
+#company-dialog .company-series-inputs button { padding:6px; font-size:11px; }
+#company-dialog textarea { width:100%; resize:vertical; }
+.company-invitation-choices { margin-block:4px; }
+.company-invitation-choices > details { padding:2px 0; }
+@media(max-width:420px) {
+  #company-dialog { --account-pad:12px; }
+  #company-dialog .company-disclosure { padding-inline:5px; }
+}

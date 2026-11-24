@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {randomBytes} = require('node:crypto');
 const {PGlite} = require('@electric-sql/pglite');
+const S = require('../src/core/schedule.js');
 
 test('scoped schedules protect person rows and preserve places when detached', async t => {
   const db = new PGlite();
@@ -13,7 +14,8 @@ test('scoped schedules protect person rows and preserve places when detached', a
     create table auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz);
     create function auth.jwt() returns jsonb language sql as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     create function auth.uid() returns uuid language sql as $$select (auth.jwt()->>'sub')::uuid$$;`);
-  for (const file of ['schema.sql', 'companies.sql', 'application-mail.sql']) await db.exec(fs.readFileSync('database/' + file, 'utf8'));
+  for (const file of ['schema.sql', 'companies.sql', 'guest-invitations.sql', 'application-mail.sql'])
+    await db.exec(fs.readFileSync('database/' + file, 'utf8'));
   const users = [];
   for (let i = 0; i < 5; i++) {
     const {id} = (await db.query('insert into auth.users values(gen_random_uuid(),$1,now()) returning id', [`test${i}@example.test`])).rows[0];
@@ -168,4 +170,188 @@ test('scoped schedules protect person rows and preserve places when detached', a
   await signIn(4);
   await assert.rejects(redeem(0),/INVITE_INVALID/);
   await assert.rejects(rpc('read'),/DENIED/);
+
+  await signIn(0);
+  board = await rpc('read');
+  board.payload.groups.find(group=>group.id==='open').members=[0,1];
+  await save(board.version,board.payload);
+  await signIn(3);
+  const memberBoard = await rpc('read');
+  const proposed = S.reserve(memberBoard.payload,'open',date,[{start:550,end:560}]);
+  const meetingId = proposed.meetings[0].id;
+  proposed.meetings[0].creatorName = 'Untrusted submitted name';
+  const incorrectAvailability = S.editPerson(proposed,0,date,[{start:540,end:545}],[]);
+  await assert.rejects(save(memberBoard.version,incorrectAvailability), /DENIED/);
+  const wrongGroup = structuredClone(proposed);
+  wrongGroup.meetings[0].group='private';
+  await assert.rejects(save(memberBoard.version,wrongGroup), /DENIED/);
+  const created = await save(memberBoard.version,proposed);
+  assert.equal(created.payload.meetings[0].creatorName,'New guest');
+  assert.deepEqual(created.payload.meetings[0].members,[0,1]);
+
+  await signIn(0);
+  board=await rpc('read');
+  const hiddenBefore=board.payload.meetings.find(meeting=>meeting.group==='private');
+  board.payload.groups.find(group=>group.id==='open').members=[];
+  await save(board.version,board.payload);
+  await signIn(2);
+  const partiallyVisible=await rpc('read');
+  assert.deepEqual(partiallyVisible.payload.people,['Applicant']);
+  assert.deepEqual(partiallyVisible.payload.meetings,[{
+    id:meetingId,group:'open',date,start:550,end:560,members:[],creatorName:'New guest',limitedParticipants:true
+  }]);
+  await assert.rejects(save(partiallyVisible.version,S.adjustMeeting(partiallyVisible.payload,meetingId,{start:575,end:610})), /SCHEDULE_BUSY/);
+  const adjusted=await save(partiallyVisible.version,S.adjustMeeting(partiallyVisible.payload,meetingId,{start:570,end:590}));
+  assert.equal(adjusted.payload.meetings[0].creatorName,'New guest');
+  assert.deepEqual(adjusted.payload.meetings[0].members,[]);
+  assert.deepEqual([adjusted.payload.meetings[0].start,adjusted.payload.meetings[0].end],[570,590]);
+  const afterRelease=await save(adjusted.version,S.release(adjusted.payload,meetingId));
+  assert.deepEqual(afterRelease.payload.meetings,[]);
+
+  await signIn(0);
+  const restored=(await rpc('read')).payload;
+  assert.deepEqual(S.personRanges(restored,0,date),[{start:540,end:600}]);
+  assert.deepEqual(S.personRanges(restored,1,date),[{start:540,end:600}]);
+  assert.deepEqual(restored.meetings.find(meeting=>meeting.group==='private'),hiddenBefore);
+
+  await t.test('manual rows, name requests and administrator reviews respect scope and mail delivery',async()=>{
+    // Start a new simulated request window after the preceding fixture.
+    await db.exec('reset role; delete from toki_private.request_limits');
+    await signIn(3);
+    const member=await rpc('read');
+    await assert.rejects(rpc('add_person',{p_version:member.version,p_name:'Manual row',p_payload:{groups:['open']}}),/DENIED/);
+    const request=(kind,id,name)=>rpc('rename_request',{p_name:name,p_payload:{kind,id}});
+    await assert.rejects(request('person',adminRow,'Other account'),/DENIED/);
+    await assert.rejects(request('group','private','Hidden group'),/DENIED/);
+    const rename=await request('person',member.access.personId,'Requested display name');
+    await assert.rejects(request('person',member.access.personId,'Second request'),/RENAME_PENDING/);
+    await assert.rejects(rpc('rename_approve',{p_member:rename.id}),/DENIED/);
+    assert.equal((await rpc('read')).payload.people[0],'New guest');
+    assert.deepEqual((await rpc('review_list')).renames,[]);
+
+    const mail=async(action,id,lease)=>{
+      await db.exec('reset role; set role anon');
+      return notify(workerKey,action,id,lease);
+    };
+    const ack=job=>mail('ack',job.id,job.lease);
+    const renameMail=await mail('claim_v2');
+    assert.equal(renameMail.kind,'rename');
+    assert.equal(renameMail.recipient,'test0@example.test');
+    assert.equal(renameMail.related,rename.id);
+    assert.equal(renameMail.new_name,'Requested display name');
+    await ack(renameMail);
+    await signIn(0);
+    assert.equal((await rpc('review_list')).renames[0].id,rename.id);
+    await rpc('rename_approve',{p_member:rename.id});
+    await assert.rejects(rpc('rename_approve',{p_member:rename.id}),/REVIEW_CLOSED/);
+    const ready=await rpc('read');
+    assert.ok(ready.payload.people.includes('Requested display name'));
+    const manual=await rpc('add_person',{p_version:ready.version,p_name:'Manual row',p_payload:{groups:['open']}});
+    const row=manual.board.payload.rows.findIndex(row=>row.id===manual.id);
+    assert.equal(manual.board.payload.rows[row].kind,'person');
+    assert.ok(manual.board.payload.groups[0].members.includes(row));
+    assert.ok((await rpc('members')).members.every(member=>member.personId!==manual.id));
+
+    const role=value=>rpc('role',{p_member:users[2].id,p_role:value});
+    await role('admin');
+    const promotion=await mail('claim_v2');
+    assert.deepEqual([promotion.kind,promotion.recipient,promotion.label],['promotion','test0@example.test','Applicant']);
+    await ack(promotion);
+    await signIn(2);
+    assert.ok((await rpc('review_list')).probationUntil);
+    const before=await rpc('read');
+    const groupChange={...before.payload,groups:before.payload.groups.map(g=>g.id==='open'?{...g,name:'Reviewed group'}:g)};
+    const adminGuest=async names=>{
+      const {data}=(await db.query("select public.toki_guest_admin('issue_batch',$1,null,null,$2) as data",[org.id,JSON.stringify(names.map(name=>({name,groups:['open']})))])).rows[0];
+      assert.equal(data.message,undefined);return data;
+    };
+    assert.deepEqual(await save(before.version,groupChange),{queued:true});
+    assert.deepEqual(await issue([{name:'Review passcode',groups:['open']}]),{queued:true});
+    assert.deepEqual(await adminGuest(['Review guest']),{queued:true});
+    assert.equal((await rpc('members')).pinInvites.length,0);
+    assert.equal((await rpc('read')).payload.groups[0].name,'Open group');
+    assert.equal(await mail('claim_v2'),null,'digest is due the next day');
+    await mail('sweep');
+    await db.exec('reset role');
+    const {review,correctTime}=(await db.query(`select r.id as review, q.due_at=((r.day+1)+time '09:00') at time zone 'Asia/Tokyo' as "correctTime"
+      from toki_private.company_admin_reviews r join toki_private.company_workflow_mail q on q.related=r.id where r.company_id=$1`,[org.id])).rows[0];
+    assert.equal(correctTime,true);
+    await signIn(0);
+    assert.equal((await rpc('review_list')).reviews[0].canReject,false);
+    await assert.rejects(rpc('review_reject',{p_member:review}),/REVIEW_CLOSED/);
+    const makeMailDue=async()=>{
+      await db.exec("reset role; update toki_private.company_workflow_mail set due_at=now()-interval '1 minute' where kind='review'");
+    };
+    await makeMailDue();
+    const digest=await mail('claim_v2');
+    assert.equal(digest.recipient,'test0@example.test');
+    assert.equal(digest.label,'Applicant');
+    assert.equal(digest.items.length,3);
+    assert.ok(digest.items.some(item=>item.includes('Review guest')));
+    await ack(digest);
+    await signIn(2);
+    await assert.rejects(rpc('review_reject',{p_member:review}),/REVIEW_CLOSED/);
+    await signIn(0);
+    assert.equal((await rpc('review_list')).reviews[0].canReject,true);
+    await rpc('review_reject',{p_member:review});
+    const rejected=(await rpc('review_list')).reviews[0];
+    assert.equal(rejected.state,'rejected');
+    assert.deepEqual(rejected.items.map(item=>item.state),['rejected','rejected','rejected']);
+    assert.deepEqual((await rpc('read')).payload,before.payload);
+
+    await db.exec('reset role');
+    await db.query("update toki_private.company_admin_reviews set day=day-1 where id=$1",[review]);
+    await signIn(2);
+    assert.deepEqual(await save(before.version,groupChange),{queued:true});
+    const anotherGroup={...before.payload,groups:[...before.payload.groups,{id:'another',name:'Another change',members:[row]}]};
+    assert.deepEqual(await save(before.version,anotherGroup),{queued:true});
+    assert.deepEqual(await issue([{name:'Delivered invitation',groups:['open']}]),{queued:true});
+    const timing=await save(before.version,S.editPerson(before.payload,row,date,[],[{start:600,end:630}]));
+    assert.notEqual(timing.version,before.version);
+    assert.equal(timing.payload.groups[0].name,'Open group');
+    await makeMailDue();
+    const nextDigest=await mail('claim_v2');
+    await mail('sweep');
+    await signIn(0);
+    assert.equal((await rpc('read')).payload.groups[0].name,'Open group');
+    await ack(nextDigest);
+    await db.exec('reset role');
+    await db.query("update toki_private.company_admin_reviews set notified_at=now()-interval '25 hours' where id=$1",[nextDigest.related]);
+    await mail('sweep');
+    await signIn(0);
+    const applied=await rpc('read');
+    assert.equal(applied.payload.groups[0].name,'Reviewed group');
+    assert.equal(applied.payload.groups.at(-1).name,'Another change');
+    assert.deepEqual(S.personRanges(applied.payload,row,date),[{start:600,end:630}]);
+    const report=(await rpc('review_list')).reviews.find(batch=>batch.id===nextDigest.related);
+    assert.equal(report.state,'applied');
+    assert.deepEqual(report.items.map(item=>item.state),['applied','applied','applied']);
+    const ticket=report.items.find(item=>item.summary.includes('Delivered invitation')).id;
+    await assert.rejects(rpc('review_result',{p_member:ticket}),/REVIEW_CLOSED/);
+    await signIn(2);
+    assert.match((await rpc('review_result',{p_member:ticket})).invitations[0].password,/^\d{6}$/);
+    await assert.rejects(rpc('review_result',{p_member:ticket}),/REVIEW_CLOSED/);
+
+    await signIn(0);
+    await role('member');
+    const demotion=await mail('claim_v2');
+    assert.deepEqual([demotion.kind,demotion.recipient],['demotion','test2@example.test']);
+    await ack(demotion);
+    await signIn(0);
+    await assert.rejects(rpc('review_recover',{p_member:demotion.related}),/REVIEW_CLOSED/);
+    await signIn(2);
+    assert.equal((await rpc('read')).access.role,'member');
+    assert.equal((await rpc('review_list')).recovery.id,demotion.related);
+    await rpc('review_acknowledge',{p_member:demotion.related});
+    assert.equal((await rpc('review_list')).recovery.acknowledged,true);
+    await rpc('review_recover',{p_member:demotion.related});
+    assert.equal((await rpc('read')).access.role,'admin');
+    await signIn(0);
+    await role('member');
+    const expired=(await mail('claim_v2')).related;
+    await db.exec('reset role');
+    await db.query("update toki_private.company_admin_recovery set demoted_at=now()-interval '8 days' where id=$1",[expired]);
+    await signIn(2);
+    await assert.rejects(rpc('review_recover',{p_member:expired}),/REVIEW_CLOSED/);
+  });
 });

@@ -14,12 +14,12 @@ async function environment(t){
   const board={schemaVersion:4,people:['A','B'],groups:[],events:[],meetings:[]};
   w.TokiGoogleCalendar={configured:true,get connected(){return connected;},load:async()=>{},login:async()=>{connected=false;if(loginFailure)throw Error('権限不足');connected=true;},logout:()=>{connected=false;},listCalendars:async signal=>listHandler?listHandler(signal):items,fetchBusy:async(range,ids,signal)=>{fetches.push({range,ids:[...ids],signal});if(busyHandler)return busyHandler(range,ids,signal);return ids.includes('shared')?[{start:Date.parse('2026-10-05T11:10:00+09:00'),end:Date.parse('2026-10-05T11:50:00+09:00')}]:[];}};
   w.eval(fs.readFileSync(sourcePath('google-import-ui.js'),'utf8'));
-  w.TokiGoogleImportUI({context:()=>({board,fingerprint,pending:false}),selected:()=> '2026-10-05',canOpen:()=>true,apply:async(plan,version)=>{saves.push({plan,version});return true;}});
+  w.TokiGoogleImportUI({context:()=>({board,fingerprint,pending:false}),today:()=> '2026-10-05',canOpen:()=>true,apply:async(plan,version)=>{saves.push({plan,version});return true;}});
   t.after(()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[]);});
   async function click(id){$(id).click();await flush();}
   const inputs=()=>[...$('google-calendar-list').querySelectorAll('input')];
   const input=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new w.Event('input'));};
-  return {w,d,$,items,fetches,saves,click,inputs,input,setList:fn=>listHandler=fn,setBusy:fn=>busyHandler=fn,failLogin:()=>loginFailure=true,update:()=>fingerprint='changed',async open(){await click('google-import-button');if(!connected)await click('google-login');},setRange(){input('google-time-min','2026-10-05T09:00');input('google-time-max','2026-10-05T14:00');}};
+  return {w,d,$,items,fetches,saves,click,inputs,input,setList:fn=>listHandler=fn,setBusy:fn=>busyHandler=fn,failLogin:()=>loginFailure=true,update:()=>fingerprint='changed',async open(){await click('google-import-button');if(!connected)await click('google-login');},setRange(){input('google-time-min','2026-10-05');input('google-time-max','2026-10-06');}};
 }
 
 test('calendar selection starts with all checked and names remain plain text',async t=>{
@@ -32,9 +32,9 @@ test('calendar selection starts with all checked and names remain plain text',as
 
 test('selected-calendar busy time affects preview, selection changes invalidate it, save requires explicit action',async t=>{
   const e=await environment(t);await e.open();e.setRange();await e.click('google-preview-button');
-  assert.deepEqual(e.fetches[0].ids,['mine','shared','text']);assert.match(e.$('google-import-rows').textContent,/09:00〜11:00、12:00〜14:00/);assert.equal(e.saves.length,0);
+  assert.deepEqual(e.fetches[0].ids,['mine','shared','text']);assert.match(e.$('google-import-rows').textContent,/08:00〜11:00、12:00〜24:00/);assert.equal(e.saves.length,0);
   e.inputs()[1].click();assert.equal(e.$('google-import-preview').hidden,true);assert.equal(e.$('google-apply-button').disabled,true);
-  await e.click('google-preview-button');assert.deepEqual(e.fetches[1].ids,['mine','text']);assert.match(e.$('google-import-rows').textContent,/09:00〜14:00/);assert.match(e.$('google-import-summary').textContent,/2件のカレンダー/);
+  await e.click('google-preview-button');assert.deepEqual(e.fetches[1].ids,['mine','text']);assert.match(e.$('google-import-rows').textContent,/08:00〜24:00/);assert.match(e.$('google-import-summary').textContent,/2件のカレンダー/);
   await e.click('google-apply-button');assert.equal(e.saves.length,1);assert.equal(e.$('google-import-dialog').open,false);
 });
 
@@ -65,5 +65,5 @@ test('changing the Google account or logging out clears prior calendar IDs and p
 
 test('editing the person or requested period invalidates old preview before saving',async t=>{
   const e=await environment(t);await e.open();e.setRange();await e.click('google-preview-button');e.input('google-import-person','1');assert.equal(e.$('google-import-preview').hidden,true);assert.equal(e.$('google-apply-button').disabled,true);
-  await e.click('google-preview-button');e.input('google-time-min','2026-10-05T10:00');assert.equal(e.$('google-import-preview').hidden,true);assert.equal(e.saves.length,0);
+  await e.click('google-preview-button');e.input('google-time-min','2026-10-04');assert.equal(e.$('google-import-preview').hidden,true);assert.equal(e.saves.length,0);
 });

@@ -1,8 +1,8 @@
 "use strict";
-window.TokiAvailabilityUI=({board,selected,excluded,notify,canOpen})=>{
+window.TokiAvailabilityUI=({board,today,excluded,notify,canOpen})=>{
   const $=id=>document.getElementById(id),dialog=$('export-dialog');
   function update(){
-    try{const key=$('export-person').value;const text=window.TokiSchedule.exportText(board(),key,$('export-first').value,$('export-last').value,key.startsWith('g:')?excluded(key.slice(2)):[]);$('export-result').value=text;$('export-error').textContent='';$('copy-availability').disabled=!text;}
+    try{const key=$('export-person').value;const text=window.TokiSchedule.exportText(board(),key,$('export-first').value,$('export-last').value,key.startsWith('g:')?date=>excluded(key.slice(2),date):[]);$('export-result').value=text;$('export-error').textContent='';$('copy-availability').disabled=!text;}
     catch(error){$('export-error').textContent=error.message;$('export-result').value='';$('copy-availability').disabled=true;}
   }
   $('export-availability').onclick=()=>{
@@ -10,7 +10,8 @@ window.TokiAvailabilityUI=({board,selected,excluded,notify,canOpen})=>{
     for(const [key,name] of [...current.people.map((n,i)=>[`p:${i}`,n]),...current.groups.map(g=>[`g:${g.id}`,`グループ：${g.name}`])]){
       const option=document.createElement('option');option.value=key;option.textContent=name;$('export-person').append(option);
     }
-    const week=window.TokiModel.weekDates(selected());$('export-first').value=week[0];$('export-last').value=week[6];update();dialog.showModal();
+    const first=today(),M=window.TokiModel;
+    $('export-first').value=first;$('export-last').value=M.shiftDate(first,7)||M.MAX_DATE;update();dialog.showModal();
   };
   for(const id of ['export-person','export-first','export-last'])$(id).addEventListener('input',update);
   $('close-export').onclick=()=>dialog.close();

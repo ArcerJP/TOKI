@@ -2,11 +2,13 @@ const {sourcePath}=require('../scripts/pwa-assets.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const payload=()=>({schemaVersion:4,people:['Member'],groups:[],events:[],meetings:[]});
 const choices=()=>['a','b'].map(id=>({id,name:'Company '+id,code:id.repeat(32),role:'member',status:'active'}));
-function environment({storage=new Map(),identity='u1',offline=false,search='',hash='',authError=null}={}){
+function environment({storage=new Map(),tab=new Map(),identity='u1',offline=false,search='',hash='',authError=null,callbackIdentity=null}={}){
   let failure=null,callback,handler;const calls=[],boards=[],resets=[],errors=[],states=[],accounts=[],listeners={},navigator={onLine:!offline};
   const store={a:{companyId:'a',payload:payload(),version:1},b:{companyId:'b',payload:{...payload(),people:['Other company']},version:1}};
   const session=()=>identity?{user:{id:identity,email:identity+'@example.com'}}:null;
-  const client={auth:{dispose:async()=>{},onAuthStateChange:fn=>callback=fn,getSession:async()=>({data:{session:session()},error:authError}),signInWithOAuth:async args=>{calls.push({oauth:args});return {};},signOut:async()=>{identity=null;callback('SIGNED_OUT',null);return {};}},async rpc(name,args){
+  const client={auth:{dispose:async()=>{},onAuthStateChange:fn=>callback=fn,getSession:async()=>({data:{session:session()},error:authError}),signInWithOAuth:async args=>{calls.push({oauth:args});return {};},exchangeCodeForSession:async code=>{
+    calls.push({exchange:code});identity=callbackIdentity;return {data:{session:session()}};
+  },signOut:async()=>{identity=null;callback('SIGNED_OUT',null);return {};}},async rpc(name,args){
     calls.push({name,args});if(handler)return handler(name,args);
     if(failure)return {status:failure==='NETWORK'?0:400,error:{message:failure}};
     if(args.p_action==='list')return {data:choices()};
@@ -14,13 +16,15 @@ function environment({storage=new Map(),identity='u1',offline=false,search='',ha
     return {data:structuredClone(store[args.p_company]||{})};
   }};
   const localStorage={get length(){return storage.size;},key:i=>[...storage.keys()][i],getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
-  const window={TOKI_CONFIG:{url:'https://example.supabase.co',publishableKey:'public-test',boardId:'october-2026',siteUrl:'https://example.test/'},TokiSupabase:{createClient:()=>client},addEventListener:(type,fn)=>listeners[type]=fn};
+  const sessionStorage={getItem:k=>tab.get(k)||null,setItem:(k,v)=>tab.set(k,v),removeItem:k=>tab.delete(k)};
+  const skdOptions=[];
+  const window={TOKI_CONFIG:{url:'https://example.supabase.co',publishableKey:'public-test',boardId:'october-2026',siteUrl:'https://example.test/'},TokiSupabase:{createClient:(url,key,options)=>{skdOptions.push(options);return client;}},addEventListener:(type,fn)=>listeners[type]=fn};
   vm.runInNewContext(fs.readFileSync(sourcePath('model.js'),'utf8'),{window});
   window.TokiAuthStorage=require('../src/auth/auth-storage.js');
   const document={hidden:false,createElement:()=>({}),head:{append:s=>queueMicrotask(()=>s.onload())},addEventListener(){}};
-  const replacedUrls=[];
-  vm.runInNewContext(fs.readFileSync(sourcePath('shared.js'),'utf8'),{window,document,navigator,localStorage,location:{protocol:'https:',hostname:'example.test',search,hash,pathname:'/'},history:{replaceState:(state,title,url)=>replacedUrls.push(url)},URL,URLSearchParams,setInterval:()=>0,setTimeout});
-  return {api:window.TokiShared,calls,boards,resets,errors,states,accounts,storage,store,navigator,listeners,replacedUrls,init:()=>window.TokiShared.initialize({board:b=>boards.push(b),reset:()=>resets.push(1),error:e=>errors.push(e),state:s=>states.push(s),account:a=>accounts.push(a)}),fail:x=>failure=x,handle:fn=>handler=fn,async changeUser(id){identity=id;callback('SIGNED_IN',session());await new Promise(r=>setTimeout(r,10));}};
+  const replacedUrls=[],navigations=[];
+  vm.runInNewContext(fs.readFileSync(sourcePath('shared.js'),'utf8'),{window,document,navigator,localStorage,sessionStorage,location:{protocol:'https:',hostname:'example.test',search,hash,pathname:'/',replace:url=>navigations.push(String(url))},history:{replaceState:(state,title,url)=>replacedUrls.push(url)},URL,URLSearchParams,setInterval:()=>0,setTimeout});
+  return {api:window.TokiShared,calls,boards,resets,errors,states,accounts,storage,store,navigator,listeners,replacedUrls,navigations,skdOptions,init:()=>window.TokiShared.initialize({board:b=>boards.push(b),reset:()=>resets.push(1),error:e=>errors.push(e),state:s=>states.push(s),account:a=>accounts.push(a)}),fail:x=>failure=x,handle:fn=>handler=fn,async changeUser(id){identity=id;callback('SIGNED_IN',session());await new Promise(r=>setTimeout(r,10));}};
 }
 
 test('failed OAuth callbacks show a safe error, clean the URL, and never select a previous account',async()=>{
@@ -48,6 +52,37 @@ test('rate limiting backs off locally and an HTTP permission denial clears cache
 test('login is required; a sharing link is never used as authorization',async()=>{
   const e=environment({identity:null});await e.init();assert.equal(e.calls.length,0);await assert.rejects(e.api.join('a'),x=>x.code==='AUTH');
   await e.api.login('a');assert.equal(e.calls[0].oauth.provider,'google');assert.equal(e.calls[0].oauth.options.redirectTo,'https://example.test/');assert.equal(e.api.user,null);
+});
+test('guest conversion uses the fresh Google callback and keeps the guest device token out of navigation',async()=>{
+  const code='A'.repeat(32),token='a'.repeat(64),intent='toki-guest-google-link-v1';
+  const pending=()=>new Map([[intent,JSON.stringify({code,token,expiresAt:Date.now()+600000,calendar:true})]]);
+  const start=environment({tab:pending(),search:'?start-guest-google=1'});
+  await start.init();
+  assert.equal(start.calls.length,1);
+  assert.equal(start.calls[0].oauth.options.redirectTo,'https://example.test/');
+  assert.ok(!JSON.stringify(start.calls).includes(token));
+  const tab=pending(),storage=new Map([['toki-guest-v1:'+code,'{}']]);
+  const e=environment({tab,storage,search:'?code=test-oauth-code',callbackIdentity:'new-account'});
+  e.handle((name,args)=>args.p_action==='link_guest'?{data:{id:'a'}}:args.p_action==='list'?{data:choices()}:{data:e.store.a});
+  await e.init();
+  assert.equal(e.skdOptions[0].auth.detectSessionInUrl,false);
+  assert.equal(e.calls[0].exchange,'test-oauth-code');
+  assert.equal(e.calls[1].args.p_payload,token);
+  assert.equal(e.api.user.id,'new-account');
+  assert.equal(e.api.company.id,'a');
+  assert.deepEqual(e.replacedUrls,['/']);
+  assert.equal(e.api.takeGuestImport(),true);
+  assert.equal(e.api.takeGuestImport(),false);
+  assert.equal(tab.has(intent),false);
+  assert.equal(storage.has('toki-guest-v1:'+code),false);
+  const existing=environment({tab:pending(),callbackIdentity:'already-a-member',search:'?code=test-oauth-code'});
+  existing.handle(()=>({status:400,error:{message:'MEMBER_EXISTS'}}));
+  await existing.init();
+  assert.deepEqual(existing.navigations,['https://example.test/?guest='+code]);
+  assert.equal(existing.boards.length,0);
+  const other=environment({tab:pending()});
+  await other.init();
+  assert.ok(other.calls.every(call=>call.args?.p_action!=='link_guest'));
 });
 test('only the explicitly selected approved company is read and its ID accompanies every save',async()=>{
   const e=environment();await e.init();assert.equal(e.boards.length,0);await e.api.selectCompany('a');assert.equal(e.boards[0].companyId,'a');

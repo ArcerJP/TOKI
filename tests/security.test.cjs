@@ -7,7 +7,9 @@ test('untrusted company and Google profile names render as text, never HTML',asy
   w.TokiShared={enabled:true,companyAccess:true,online:true,user:{id:'admin',email:'admin@example.test'},company,companies:[company],pendingCode:'',listCompanies:async()=>[company],manage:async()=>({members:[{id:'u',name,email:'member@example.test',role:'member',status:'active'}],invites:[]})};
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   w.eval(fs.readFileSync(sourcePath('company-ui.js'),'utf8'));w.TokiCompanyUI().render();await d.getElementById('company-button').onclick();
-  assert.equal(d.querySelectorAll('img,script:not([src])').length,0);assert.equal(d.getElementById('company-dialog-title').textContent,name);assert.ok(d.getElementById('company-members').textContent.includes(name));
+  assert.equal(d.querySelectorAll('img,script:not([src])').length,0);
+  assert.equal(d.getElementById('company-current-organization').textContent,'表示中の組織：'+name+'（管理者）');
+  assert.ok(d.getElementById('company-members').textContent.includes(name));
 });
 test('only top-level pages expose the UI; published scripts match the explicit CSP',()=>{
   const source=fs.readFileSync(sourcePath('security.js'),'utf8');

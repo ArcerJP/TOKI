@@ -59,9 +59,12 @@ test('administrator transfer is atomic, company-scoped and restricted to approve
     assert.equal(role(a.id,users[0]),'member');assert.equal(role(a.id,users[1]),'admin');assert.equal(role(a.id,users[2]),'admin');assert.equal(role(b.id,users[0]),'admin');
     assert.deepEqual(after.boards,original.boards);
     await auth(0);await assert.rejects(transfer(users[2]),/DENIED/);assert.deepEqual(await snapshot(),after);
+    await db.exec('reset role');
+    await db.query("update toki_private.company_admin_probation set promoted_at=now()-interval '8 days' where company_id=$1 and user_id=$2",[a.id,users[1]]);
     await auth(1);assert.deepEqual(await transfer(users[0]),{role:'member'});assert.deepEqual(await snapshot(),original);
   });
   await t.test('an expired caller session cannot transfer even with an administrator role',async()=>{
+    await db.exec('reset role');
     await db.query("update auth.sessions set not_after=now()-interval '1 second' where id=$1",[sessions[0]]);await auth(0);await assert.rejects(transfer(users[1]),/AUTH/);
     assert.deepEqual(await snapshot(),original);
   });
