@@ -425,7 +425,7 @@
       const nameLabel=el(canOpen?'button':'span','row-name',name);
       if(canOpen){nameLabel.type='button';nameLabel.title=name+'を編集・削除';nameLabel.setAttribute('aria-label',name+'を編集・削除');nameLabel.onclick=()=>openRoster(kind,id,context);}
       nameCell.append(nameLabel);
-      if(isPlace(person))nameCell.append(el('span','group-size','場所'));
+      if(isPlace(person))nameCell.append(el('span','group-size','場所・外部'));
       if(group)nameCell.append(el('span','group-size',S.participants(board,group.id,excluded(group.id)).length+'/'+group.members.length));
       if(nested&&interactive){const toggle=el('button','member-active-toggle',inactive?'−':'✓');toggle.type='button';toggle.setAttribute('aria-pressed',String(!inactive));toggle.setAttribute('aria-label',name+'を'+groups.find(g=>g.id===context).name+(inactive?'の対象に戻す':'の対象から一時除外'));toggle.title=inactive?'この端末で対象に戻す':'この端末で一時除外（取り消し線）';toggle.disabled=bulkExcluded(context).includes(name);toggle.onclick=()=>toggleMember(context,name);nameCell.insertBefore(toggle,nameLabel);}
       const track=el('div','timeline');track.dataset.row=key;

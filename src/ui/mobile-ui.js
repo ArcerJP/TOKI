@@ -112,13 +112,13 @@ window.TokiMobileUI = function (bridge) {
     }
     month.render(ctx,target?.person??-1);
   }
-  function toolbarButton(id,icon,label){
-    const target=$(id),b=button('',()=>openShared(id),label,'mob-tool');
-    b.disabled=target.disabled;b.append(navIcon(icon));return b;
+  function toolbarButton(id,icon,label,text=''){
+    const target=$(id),b=button(text,()=>openShared(id),label,'mob-tool');
+    b.disabled=target.disabled;b.prepend(navIcon(icon));return b;
   }
   function renderBrand(){
-    const brand=el('div','mob-brand'),tools=el('div','mob-brand-actions');
-    brand.append(el('strong',null,'TOKI'),tools);
+    const brand=el('div','mob-brand'),tools=el('div','mob-brand-actions'),transfers=el('div','mob-brand-actions');
+    brand.append(el('strong',null,'TOKI'),tools,transfers);
     tools.append(toolbarButton('undo','undo','元に戻す'),toolbarButton('redo','redo','やり直す'));
     const additions=['add-person','add-group','add-manual-person'].filter(id=>!$(id).hidden);
     if(additions.length){
@@ -138,13 +138,13 @@ window.TokiMobileUI = function (bridge) {
       }
       tools.append(menu);
     }
-    tools.append(toolbarButton('google-import-button','schedule','Googleカレンダーから取り込む'));
+    transfers.append(toolbarButton('google-import-button','schedule','取り込み（Googleカレンダー）','取り込み'));
     if(!matchMedia('(display-mode: standalone)').matches&&!navigator.standalone){
-      const install=button('',()=>{
+      const install=button('ダウンロード',()=>{
         if($('install-app').hidden)bridge.notify('ブラウザーの共有・メニューから「ホーム画面に追加」を選んでください。');
         else openShared('install-app');
-      },'アプリをインストール','mob-tool');
-      install.append(navIcon('download'));tools.append(install);
+      },'ダウンロード（アプリをインストール）','mob-tool');
+      install.prepend(navIcon('download'));transfers.append(install);
     }
     return brand;
   }
