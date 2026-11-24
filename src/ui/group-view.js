@@ -28,7 +28,7 @@ window.TokiGroupView=({context,change})=>{
     sync();const ctx=context(),count=ctx.board.groups.filter(g=>selection.has(g.id)).length;
     $('group-view-button').textContent=`表示グループ ${count}/${ctx.board.groups.length} ▾`;
     $('group-view-button').disabled=!ctx.ready;
-    if(ctx.ready&&!configured&&!prompted&&!document.querySelector('dialog[open]'))open();
+    if(ctx.ready&&ctx.prompt!==false&&!configured&&!prompted&&!document.querySelector('dialog[open]'))open();
   }
   $('group-view-button').onclick=open;
   window.addEventListener('storage',event=>{if(event.key===key()){scope='';sync();change();}});

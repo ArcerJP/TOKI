@@ -37,6 +37,7 @@
     <script src="google-calendar.js" defer></script>
     <script src="google-import-ui.js" defer></script>
     <script src="mobile-model.js" defer></script>
+    <script src="mobile-month.js" defer></script>
     <script src="mobile-ui.js" defer></script>
     <script src="group-view.js" defer></script>
     <script src="company-ui.js" defer></script>
@@ -208,6 +209,7 @@
         <h2 id="date-picker-title">日付を選択</h2>
         <button type="button" id="close-date-picker" aria-label="閉じる">×</button>
       </div>
+      <p id="duplicate-source" hidden></p>
       <div class="date-picker-navigation">
         <button type="button" id="previous-month" aria-label="前の月">‹</button>
         <strong id="picker-month" aria-live="polite"></strong>
@@ -222,6 +224,14 @@
         <input type="date" id="picker-direct-date" aria-label="日付を直接選択" required>
         <button type="submit">移動</button>
       </form>
+      <div id="duplicate-actions" hidden>
+        <div class="date-picker-actions">
+          <span id="duplicate-count" role="status"></span>
+          <button type="button" id="confirm-duplicate" class="primary">決定</button>
+        </div>
+        <p id="duplicate-result" role="status" hidden></p>
+        <p id="duplicate-warning" role="alert" tabindex="-1" hidden></p>
+      </div>
     </dialog>
     <dialog id="hint-dialog" aria-labelledby="hint-title">
       <div class="dialog-heading">
@@ -249,7 +259,10 @@
           個人の空き枠をクリックすると30分追加、ドラッグすると範囲を指定して追加できます。
         </li>
         <li>
-          個人の可能時間はドラッグで移動・伸縮できます。クリックだけでは変更しません。両端を重ねて離すと削除できます。長押しでは「削除」「時間をコピー」を選べます。
+          個人の可能時間はドラッグで移動・伸縮できます。帯の途中をダブルクリックすると、最も近い30分の境界で分割できます。両端を重ねて離すと削除できます。
+        </li>
+        <li>
+          可能時間やグループのMTGを右クリックまたは長押しし、「他の日に複製」を選ぶと、月間カレンダーで選んだ複数の日に登録できます。登録できなかった日には⚠を表示します。
         </li>
         <li>
           グループには対象者全員の共通時間を表示します。人の横の✓で一時除外すると、名前に取り消し線が付きます。この設定は端末内だけに保存します。
@@ -300,6 +313,7 @@
       <p id="meeting-menu-scope"></p>
       <button id="delete-meeting" class="danger">削除</button
       ><button id="copy-meeting-time">時間をコピー</button>
+      <button type="button" id="duplicate-time" aria-haspopup="dialog" aria-controls="date-picker" hidden>他の日に複製</button>
       <textarea
         id="meeting-copy-fallback"
         aria-label="コピーするMTGの時間"

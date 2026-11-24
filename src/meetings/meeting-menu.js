@@ -1,5 +1,5 @@
 "use strict";
-window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,removeAvailability,notify,settled})=>{
+window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,removeAvailability,canDuplicate,openDuplicate,notify,settled})=>{
   const $=id=>document.getElementById(id),dialog=$('meeting-menu');
   const selector='.event.meeting, .event.availability';
   let press=null,target=null,suppressClick=false,resetClick;
@@ -25,6 +25,7 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
     $('close-meeting-menu').setAttribute('aria-label',availability?'可能時間の操作を閉じる':'MTGの操作を閉じる');
     $('meeting-copy-fallback').setAttribute('aria-label',availability?'コピーする可能時間':'コピーするMTGの時間');
     $('copy-meeting-time').hidden=!availability&&person!==null;
+    $('duplicate-time').hidden=!availability&&person!==null;
     $('meeting-copy-fallback').hidden=true;$('meeting-menu-error').textContent='';
     refresh();dialog.showModal();
     const rect=dialog.getBoundingClientRect();
@@ -79,6 +80,12 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
     try{await navigator.clipboard.writeText(text);dialog.close();notify(availability?'可能時間をコピーしました':'MTGの時間をコピーしました');}
     catch{const fallback=$('meeting-copy-fallback');fallback.hidden=false;fallback.value=text;fallback.focus();fallback.select();$('meeting-menu-error').textContent='自動コピーできません。選択されたテキストをコピーしてください。';}
   };
-  function refresh(){const saving=dialog.getAttribute('aria-busy')==='true';$('delete-meeting').disabled=saving||!target||!canDelete(target);$('copy-meeting-time').disabled=saving;$('close-meeting-menu').disabled=saving;}
+  $('duplicate-time').onclick=()=>{
+    if(!target||!canDuplicate(target))return;
+    const source=target;
+    dialog.close();
+    openDuplicate(source);
+  };
+  function refresh(){const saving=dialog.getAttribute('aria-busy')==='true';$('delete-meeting').disabled=saving||!target||!canDelete(target);$('copy-meeting-time').disabled=saving;$('duplicate-time').disabled=saving||!target||!canDuplicate(target);$('close-meeting-menu').disabled=saving;}
   return {get pressing(){return Boolean(press);},refresh};
 };

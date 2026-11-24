@@ -46,3 +46,9 @@ html:not([data-toki-top-level]){display:none!important}
 .date-picker-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:12px; }
 .date-picker-actions button,.date-picker-actions input { min-height:44px; }
 .date-picker-actions input { min-width:0; max-width:100%; }
+#meeting-menu>button[hidden],.date-picker-actions[hidden] { display:none; }
+#duplicate-source,#duplicate-result,#duplicate-warning { font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+#duplicate-count { flex:1; font-size:13px; }
+#duplicate-warning { color:#853c17; background:#fff4da; padding:8px 10px; border-radius:6px; white-space:pre-line; }
+.date-picker-grid button[data-duplicate-warning] { position:relative; border-color:#a94e19; color:#73310e; background:#fff4da; }
+.date-picker-grid button[data-duplicate-warning]::after { content:"⚠"; font-size:12px; position:absolute; top:0; right:3px; }

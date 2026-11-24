@@ -29,8 +29,8 @@
   };
   const canManage=()=>!access||access.role==='admin';
   const isPlace=person=>rowMetadata?.[person]?.kind==='place';
-  const ownPerson=()=>['member','guest'].includes(access?.role)&&access.personId
-    ?rowMetadata.findIndex(row=>row.id===access.personId):-1;
+  const linkedPerson=()=>access?.personId?(rowMetadata?.findIndex(row=>row.id===access.personId)??-1):-1;
+  const ownPerson=()=>['member','guest'].includes(access?.role)?linkedPerson():-1;
   const canManagePlaces=()=>access?.role!=='guest';
   const canEditPerson=person=>canManage()||person===ownPerson()||(canManagePlaces()&&isPlace(person));
   const canEditRow=key=>key.startsWith('g:')?canManage():canEditPerson(Number(key.slice(2)));
@@ -51,6 +51,7 @@
     return [String(now.getFullYear()).padStart(4,'0'),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
   }
   let selected=today(), pickerMonth, undo=[], redo=[], drag=null, toastTimer, loadFailed=false;
+  let duplication=null;
   try{if(!shared.enabled){const raw=localStorage.getItem(KEY)||localStorage.getItem(LEGACY_KEY);if(raw){const saved=JSON.parse(raw);const board=saved.version===3?saved.board:M.upgrade(saved.version===2?saved.board:{people,dates,events:saved.events});if(!M.valid(board))throw Error("Invalid saved data");assign(board);}}}
   catch{loadFailed=true;$("save-status").textContent="保存データを読めませんでした";}
   function toast(message){$("toast").textContent=message;$("toast").hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$("toast").hidden=true,3500);}
@@ -80,6 +81,7 @@
     if(ready&&shared.enabled&&!shared.online&&!busy)$("save-status").textContent='オフライン・閲覧のみ';
     googleImportUI?.refresh();
     meetingMenu?.refresh();
+    refreshDuplicatePicker();
     mobile?.refresh();
   }
   function connectionState({online,fetchedAt}){
@@ -89,7 +91,7 @@
     setBusy(busy);
     if(ready&&!busy&&!pendingBoard)$("save-status").textContent=online?'共有保存・同期中':'オフライン・閲覧のみ';
   }
-  async function saveNext(next){
+  async function saveNext(next,{handleScheduleBusy=false}={}){
     lastSaveError='';
     if(!editable())return false;
     if(Array.isArray(next))next={...snapshot(),events:next};
@@ -99,12 +101,19 @@
       if(!persist(next))return false;
       assign(next);return true;
     }
-    const generation=accountGeneration;setBusy(true);$("save-status").textContent="共有先に保存中…";
+    const generation=accountGeneration,previousStatus=$("save-status").textContent;
+    setBusy(true);$("save-status").textContent="共有先に保存中…";
     try{const saved=await shared.save(next,revision);if(generation!==accountGeneration)return false;assign(saved.payload);access=saved.access??null;revision=saved.version;$("save-status").textContent="共有保存済み";return true;}
-    catch(error){if(generation!==accountGeneration)return false;lastSaveError=error.message;$("save-status").textContent="未保存・最新の予定を確認してください";$("meeting-error").textContent=error.message;$("roster-error").textContent=error.message;toast(error.message);await shared.refresh();return false;}
+    catch(error){
+      if(generation!==accountGeneration)return false;
+      if(handleScheduleBusy&&error.code==='SCHEDULE_BUSY'){$("save-status").textContent=previousStatus;throw error;}
+      lastSaveError=error.message;$("save-status").textContent="未保存・最新の予定を確認してください";
+      $("meeting-error").textContent=error.message;$("roster-error").textContent=error.message;toast(error.message);await shared.refresh();return false;
+    }
     finally{if(generation===accountGeneration)setBusy(false);}
   }
-  async function commit(next,message){const before=snapshot();if(!await saveNext(next)){applyPending();return false;}undo.push(before);if(undo.length>80)undo.shift();redo=[];render();toast(message);applyPending();return true;}
+  function recordChange(before){undo.push(before);if(undo.length>80)undo.shift();redo=[];render();}
+  async function commit(next,message){const before=snapshot();if(!await saveNext(next)){applyPending();return false;}recordChange(before);toast(message);applyPending();return true;}
   async function history(direction){if(!editable())return;const from=direction==="undo"?undo:redo,to=direction==="undo"?redo:undo;if(!from.length)return;const before=snapshot();if(!await saveNext(clone(from.at(-1)))){applyPending();return;}to.push(before);from.pop();render();toast(direction==="undo"?"元に戻しました":"やり直しました");applyPending();}
   function receiveBoard(board){
     if(board.version<=revision)return;
@@ -117,13 +126,13 @@
         groups.some(group=>!payload.groups.some(next=>next.id===group.id))||
         rowMetadata?.some(row=>!payload.rows.some(next=>next.id===row.id)));
     if(revoked)resetView();
-    else if(busy||drag||meetingMenu?.pressing||rowDrag?.active||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
+    else if(busy||drag||meetingMenu?.pressing||rowDrag?.active||mobile?.interacting||dialogOpen()){pendingBoard=board;$("save-status").textContent="他のメンバーが更新しました";return;}
     assign(payload);access=nextAccess;revision=board.version;undo=[];redo=[];ready=true;
     if(!changed||revoked){try{excludedGroups=JSON.parse(localStorage.getItem(prefKey('excluded'))||'{}');collapsed=new Set(JSON.parse(localStorage.getItem(prefKey('collapsed'))||'[]'));}catch{excludedGroups={};collapsed=new Set();}}
     $("app-loading").hidden=true;$("auth-gate").hidden=true;$("schedule-app").hidden=false;$("save-status").textContent="共有保存済み";render();if(changed)toast("他のメンバーの変更を反映しました");
   }
   function applyPending(){
-    if(busy||drag||meetingMenu?.pressing||rowDrag?.active||dialogOpen())return;
+    if(busy||drag||meetingMenu?.pressing||rowDrag?.active||mobile?.interacting||dialogOpen())return;
     if(pendingBoard){const board=pendingBoard;pendingBoard=null;receiveBoard(board);}
     if(pendingLocalBoard){assign(pendingLocalBoard);pendingLocalBoard=null;undo=[];redo=[];render();toast('別タブの変更を反映しました');}
   }
@@ -145,6 +154,28 @@
   function chooseDate(date){
     $('date-picker').close();
     selectDate(date);
+    mobile?.jumpToDate(date);
+  }
+  const canDuplicate=source=>editable()&&(source.kind==='availability'
+    ?canEditPerson(source.person):source.kind==='meeting'&&source.person===null&&canManage());
+  function refreshDuplicatePicker(){
+    const saving=Boolean(duplication?.saving);
+    $('date-picker').setAttribute('aria-busy',String(saving));
+    $('close-date-picker').disabled=saving;
+    $('confirm-duplicate').disabled=!duplication||saving||!canDuplicate(duplication.source)||!duplication.dates.size;
+  }
+  function dateButtonState(button,date){
+    const blocked=duplication?.blocked.has(date);
+    button.toggleAttribute('data-duplicate-warning',Boolean(blocked));
+    button.setAttribute('aria-label',label(date)+(blocked?'（複製できませんでした）':''));
+    button.setAttribute('aria-pressed',String(duplication?duplication.dates.has(date):date===selected));
+  }
+  function toggleDuplicateDate(button,date){
+    const {dates}=duplication;
+    if(dates.has(date))dates.delete(date);else dates.add(date);
+    dateButtonState(button,date);
+    $('duplicate-count').textContent=dates.size+'日を選択';
+    refreshDuplicatePicker();
   }
   function renderMonth(focusDate=selected){
     const first=new Date(pickerMonth+'-01T00:00:00Z'),last=new Date(first);
@@ -158,10 +189,17 @@
     for(let number=1;number<=last.getUTCDate();number++){
       const date=pickerMonth+'-'+String(number).padStart(2,'0');
       const button=el('button',null,String(number));
-      button.type='button';button.disabled=!M.validDate(date);button.dataset.date=date;button.tabIndex=-1;
-      button.setAttribute('aria-label',label(date));button.setAttribute('aria-pressed',String(date===selected));
+      button.type='button';button.disabled=!M.validDate(date)||date===duplication?.date;button.dataset.date=date;button.tabIndex=-1;
+      dateButtonState(button,date);
       if(date===current)button.setAttribute('aria-current','date');
-      button.onclick=()=>chooseDate(date);cells.append(button);
+      button.onclick=()=>{
+        if(!duplication)chooseDate(date);
+        else if(!duplication.saving){
+          cells.querySelector('button[tabindex="0"]').tabIndex=-1;
+          button.tabIndex=0;
+          toggleDuplicateDate(button,date);
+        }
+      };cells.append(button);
     }
     const focus=cells.querySelector(`button[data-date="${focusDate}"]:enabled`)||cells.querySelector('button:enabled');
     focus.tabIndex=0;
@@ -169,31 +207,108 @@
   }
   function openDatePicker(){
     if(!ready||drag||rowDrag?.active||dialogOpen())return;
+    duplication=null;
+    showPickerMode();
     pickerMonth=selected.slice(0,7);
     const input=$('picker-direct-date');
     input.value=selected;input.min=M.MIN_DATE;input.max=M.MAX_DATE;
     const focus=renderMonth();
     $('date-picker').showModal();focus.focus();
   }
+  function showPickerMode(){
+    $('date-picker-title').textContent=duplication?'他の日に複製':'日付を選択';
+    if(duplication)$('date-picker').setAttribute('aria-describedby','duplicate-source');
+    else $('date-picker').removeAttribute('aria-describedby');
+    $('duplicate-source').hidden=!duplication;
+    $('duplicate-actions').hidden=!duplication;
+    $('picker-form').hidden=Boolean(duplication);
+    refreshDuplicatePicker();
+  }
+  function openDuplicatePicker(source){
+    if(!canDuplicate(source)||drag||dialogOpen())return;
+    const board=snapshot(),range=source.kind==='availability'?source:board.meetings.find(m=>m.id===source.id);
+    if(!range)return;
+    duplication={source,date:range.date,dates:new Set(),blocked:new Set(),saving:false};
+    pickerMonth=range.date.slice(0,7);
+    const name=source.kind==='availability'?board.people[source.person]+'の可能時間':board.groups.find(g=>g.id===range.group).name+'のMTG';
+    $('duplicate-source').textContent=name+'　'+A.formatDay(range.date,[range]);
+    $('duplicate-count').textContent='0日を選択';
+    $('duplicate-result').hidden=true;
+    $('duplicate-warning').hidden=true;
+    showPickerMode();
+    const focus=renderMonth(M.shiftDate(range.date,1));
+    $('date-picker').showModal();focus.focus();
+  }
+  async function saveDuplicateDates(state,dates,result){
+    if(duplication!==state||pendingBoard||pendingLocalBoard)throw Error('予定表が更新されました。画面を閉じ、最新の予定から操作してください。');
+    const plan=S.duplicateDates(snapshot(),state.source,dates);
+    result.existing.push(...plan.existing);result.blocked.push(...plan.blocked);
+    if(!plan.added.length)return;
+    try{
+      if(!await saveNext(plan.board,{handleScheduleBusy:true}))throw Error(lastSaveError||'複製を保存できませんでした。');
+      result.added.push(...plan.added);
+    }catch(error){
+      if(error.code!=='SCHEDULE_BUSY')throw error;
+      // The server can see reservations in groups that the current account cannot view.
+      if(plan.added.length===1){result.blocked.push(plan.added[0]);return;}
+      const middle=Math.ceil(plan.added.length/2);
+      await saveDuplicateDates(state,plan.added.slice(0,middle),result);
+      await saveDuplicateDates(state,plan.added.slice(middle),result);
+    }
+  }
+  $('confirm-duplicate').onclick=async()=>{
+    const state=duplication;
+    if(!state||state.saving||!canDuplicate(state.source)||!state.dates.size)return;
+    const before=snapshot(),result={added:[],existing:[],blocked:[]};
+    let failure='';
+    state.saving=true;refreshDuplicatePicker();
+    try{await saveDuplicateDates(state,[...state.dates],result);}
+    catch(error){failure=error.message;}
+    if(duplication!==state||!$('date-picker').open)return;
+    state.saving=false;
+    if(result.added.length)recordChange(before);
+    const summary=[result.added.length&&result.added.length+'日に複製しました。',result.existing.length&&result.existing.length+'日は登録済みです。'].filter(Boolean).join(' ');
+    if(!failure&&!result.blocked.length){$('date-picker').close();toast(summary);return;}
+    for(const date of [...result.added,...result.existing])state.dates.delete(date);
+    state.blocked=new Set(result.blocked);
+    $('duplicate-count').textContent=state.dates.size+'日を選択';
+    $('duplicate-result').textContent=summary;$('duplicate-result').hidden=!summary;
+    const warning=$('duplicate-warning');
+    warning.textContent=[result.blocked.length&&'⚠ 複製できなかった日　'+result.blocked.sort().map(label).join('、'),failure&&'⚠ '+failure].filter(Boolean).join('\n');
+    warning.hidden=false;
+    renderMonth(document.activeElement?.dataset.date);
+    refreshDuplicatePicker();
+    warning.focus();
+  };
   for(const [id,offset] of [['previous-month',-1],['next-month',1]])$(id).onclick=()=>{
+    if(duplication?.saving)return;
     const month=monthAt(pickerMonth,offset);
     if(month){pickerMonth=month;renderMonth();}
   };
   $('picker-days').onkeydown=e=>{
     const offset={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[e.key];
-    if(!offset||!e.target.dataset.date)return;
+    if(!offset||!e.target.dataset.date||duplication?.saving)return;
     e.preventDefault();
-    const date=M.shiftDate(e.target.dataset.date,offset);
+    let date=M.shiftDate(e.target.dataset.date,offset);
+    if(duplication&&date===duplication.date)date=M.shiftDate(date,offset);
     if(!date)return;
     if(date.slice(0,7)!==pickerMonth){pickerMonth=date.slice(0,7);renderMonth(date).focus();return;}
     e.target.tabIndex=-1;
     const button=$('picker-days').querySelector(`button[data-date="${date}"]`);
     button.tabIndex=0;button.focus();
   };
-  $('close-date-picker').onclick=()=>$('date-picker').close();
-  $('picker-today').onclick=()=>chooseDate(today());
+  $('close-date-picker').onclick=()=>{if(!duplication?.saving)$('date-picker').close();};
+  $('date-picker').addEventListener('cancel',event=>{if(duplication?.saving)event.preventDefault();});
+  $('date-picker').addEventListener('close',()=>{
+    if($('date-picker').open)return;
+    duplication=null;
+    $('duplicate-source').textContent='';$('duplicate-result').textContent='';$('duplicate-warning').textContent='';
+    showPickerMode();
+  });
+  $('picker-today').onclick=()=>{if(!duplication)chooseDate(today());};
   $('picker-form').onsubmit=e=>{
     e.preventDefault();
+    if(duplication)return;
     const date=$('picker-direct-date').value;
     if(M.validDate(date))chooseDate(date);
   };
@@ -286,6 +401,16 @@
     drag={pointer:e.pointerId,x:e.clientX,y:e.clientY,track,row:track.dataset.row,event,bar,mode:event?(side||(event.kind==='common'?'reserve':'move')):'create',origin:at(track,e.clientX),moved:false};
     if(event?.kind==='meeting')drag.available=S.meetingAvailability(snapshot(),event.id);
   });
+  $("chart-scroll").addEventListener('dblclick',async event=>{
+    const bar=event.target.closest('.event.availability');
+    const range=bar&&displayBars.get(bar.dataset.id);
+    if(event.button!==0||!range||drag||dialogOpen()||!canEditPerson(range.person)||!editable())return;
+    const boundary=snap(at(bar.closest('.timeline'),event.clientX));
+    if(boundary<=range.start||boundary>=range.end)return;
+    event.preventDefault();
+    try{await commit(S.splitPerson(snapshot(),range.person,range.date,range,boundary),'可能時間を分割しました');}
+    catch(error){toast(error.message);}
+  });
   document.addEventListener('pointermove',e=>{
     if(!drag||e.pointerId!==drag.pointer)return;const d=drag;
     if(!d.moved&&Math.hypot(e.clientX-d.x,e.clientY-d.y)<5)return;
@@ -340,7 +465,7 @@
   let printScope="current";
   $("print-button").onclick=()=>$("print-dialog").showModal();$("close-print").onclick=()=>$("print-dialog").close();
   $("print-form").onsubmit=e=>{e.preventDefault();printScope=$("print-scope").value;buildPrint(printScope);$("print-dialog").close();window.print();};window.addEventListener("beforeprint",()=>buildPrint(printScope));window.addEventListener("afterprint",()=>{printScope="current";});
-  window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===3&&M.valid(saved.board)){pendingLocalBoard=saved.board;mobile?.refresh();if($("google-import-dialog").open||mobile?.editing)return;if(busy||dialogOpen()||drag||rowDrag?.active||meetingMenu?.pressing){toast("別タブで予定が更新されています。操作を終了すると最新の内容を反映します。");return;}applyPending();}}catch{}});
+  window.addEventListener("storage",e=>{if(shared.enabled||e.key!==KEY)return;try{const saved=JSON.parse(e.newValue);if(saved?.version===3&&M.valid(saved.board)){pendingLocalBoard=saved.board;mobile?.refresh();if($("google-import-dialog").open||mobile?.editing)return;if(busy||dialogOpen()||drag||rowDrag?.active||meetingMenu?.pressing||mobile?.interacting){toast("別タブで予定が更新されています。操作を終了すると最新の内容を反映します。");return;}applyPending();}}catch{}});
   document.querySelectorAll("dialog").forEach(dialog=>dialog.addEventListener("close",applyPending));
   let rosterKind,rosterId,rosterContext;
   async function changeRoster(action,params,message){
@@ -469,7 +594,7 @@
   document.addEventListener("keydown",event=>{
     if(event.key==="Escape"&&fullscreen&&!dialogOpen()&&!drag&&!rowDrag?.active&&!fullscreenPending){event.preventDefault();exitScheduleFullscreen();}
   },true);
-  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:target=>editable()&&(target.kind==='availability'?canEditPerson(target.person):canManage()),onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),removeAvailability:target=>commit(S.editPerson(snapshot(),target.person,target.date,[target],[]),'可能時間を削除しました'),notify:toast,settled:applyPending});
+  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:target=>editable()&&(target.kind==='availability'?canEditPerson(target.person):canManage()),onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),removeAvailability:target=>commit(S.editPerson(snapshot(),target.person,target.date,[target],[]),'可能時間を削除しました'),canDuplicate,openDuplicate:openDuplicatePicker,notify:toast,settled:applyPending});
   rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>canManage()&&editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
   window.TokiAvailabilityUI({board:snapshot,selected:()=>selected,excluded,notify:toast,canOpen:()=>ready&&!drag&&!rowDrag?.active});
   window.TokiMeetingExportUI({board:snapshot,selected:()=>selected,notify:toast,canOpen:()=>ready&&!busy&&!drag&&!rowDrag?.active&&!dialogOpen()});
@@ -484,14 +609,14 @@
       return false;
     }
   });
-  groupView=window.TokiGroupView({context:()=>({scope:viewScope(),board:snapshot(),ready,showAll:Boolean(shared.guest)}),change:render});
+  groupView=window.TokiGroupView({context:()=>({scope:viewScope(),board:snapshot(),ready,showAll:Boolean(shared.guest),prompt:mobile?.shouldPromptGroups}),change:render});
   companyUI=window.TokiCompanyUI();
   mobile=window.TokiMobileUI({
     context:()=>({board:snapshot(),date:selected,ready,busy,writable:editable(),pending:Boolean(pendingBoard||pendingLocalBoard),fingerprint:JSON.stringify(snapshot())}),
     interacting:()=>Boolean(drag||rowDrag?.active),
-    selectDate,openDatePicker,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
-    scoped:()=>Boolean(access),canManage,canEditRow,canAddPlace,canManagePlaces,ownPerson,isPlace,
-    visibleGroup:id=>groupView.visible(id),openGroupView:()=>groupView.open(),
+    selectDate,today,openDatePicker,openDuplicatePicker,canDuplicate,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
+    scoped:()=>Boolean(access),canManage,canEditRow,canAddPlace,canManagePlaces,ownPerson,linkedPerson,isPlace,
+    visibleGroup:id=>groupView.visible(id),openGroupView:()=>groupView.open(),refreshGroupView:()=>groupView.refresh(),
     commit:async(next,message,fingerprint)=>{
       if(pendingBoard||pendingLocalBoard||JSON.stringify(snapshot())!==fingerprint)throw Error('予定表が更新されました。画面を閉じ、最新の予定から編集してください。');
       if(!await commit(next,message))throw Error(lastSaveError||'保存できませんでした。接続と最新の予定を確認して、もう一度お試しください。');
@@ -501,7 +626,7 @@
   });
   window.addEventListener('online',()=>setBusy(busy));window.addEventListener('offline',()=>setBusy(busy));
   function resetView(){
-    accountGeneration++;ready=false;busy=false;pendingBoard=null;pendingLocalBoard=null;revision=null;undo=[];redo=[];
+    accountGeneration++;ready=false;busy=false;pendingBoard=null;pendingLocalBoard=null;revision=null;undo=[];redo=[];duplication=null;
     access=null;
     cancelDrag();rowDrag?.cancel();exitScheduleFullscreen();
     assign({schemaVersion:4,people:[],groups:[],events:[],meetings:[]});displayBars.clear();

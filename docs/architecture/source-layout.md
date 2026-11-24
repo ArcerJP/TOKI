@@ -11,7 +11,7 @@
 | src/auth/ | auth-storage、shared、company-ui、company.css。組織・認証・共有データ通信 |
 | src/calendar/ | calendar-import、google-calendar、google-import-ui。Google取込 |
 | src/meetings/ | meeting-menu、meeting-export-ui。MTGメニューと書き出し |
-| src/ui/ | availability-ui、group-view、row-drag、mobile-ui、styles.css、mobile.css。PC/スマホの表示・操作 |
+| src/ui/ | availability-ui、group-view、row-drag、mobile-ui、mobile-month、styles.css、mobile.css。PC/スマホの表示・操作 |
 | public/ | index.html、config.js、manifest.webmanifest、sw.js、icons、vendor。公開する素材・設定・固定依存 |
 | local/ | 任意の非公開初期予定。README以外はGit除外 |
 | scripts/ | 公開対応表、パッケージ生成、vendor生成とentry、名前規則生成 |

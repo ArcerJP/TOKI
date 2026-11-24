@@ -59,6 +59,18 @@ test('adding availability never overrides MTG; moving preserves exact duration',
   assert.deepEqual(S.personRanges(next,0,date),[{start:480,end:600},{start:660,end:1080}]);
   assert.deepEqual(H.move({start:630,end:770},'move',640,671),{start:660,end:800});
 });
+test('monthly cross-date movement preserves the source if a destination MTG prevents the move',()=>{
+  const after=M.shiftDate(date,1),from={start:540,end:675},board=seed();
+  board.events[0].end=from.end;
+  board.meetings.push({id:'next-meeting',group:'a',date:after,start:690,end:750,members:[0,1]});
+  const before=structuredClone(board);
+  const op={person:0,date,targetDate:after,from,to:{start:600,end:735}};
+  assert.throws(()=>H.applyMonthEdit(board,op),/登録済みのMTG/);
+  assert.deepEqual(board,before);
+  const moved=H.applyMonthEdit(board,{...op,to:{start:480,end:615}});
+  assert.deepEqual(S.personRanges(moved,0,date),[]);
+  assert.deepEqual(S.personRanges(moved,0,after),[{start:480,end:615}]);
+});
 test('explicit transfer moves only the selected interval to the chosen person and still protects their MTG',()=>{
   const board=S.reserve(seed(),'b',date,[{start:600,end:660}]);
   const next=H.apply(board,{kind:'person',person:0,target:2,date,from:{start:540,end:1080},to:{start:570,end:1110}});

@@ -33,7 +33,7 @@ async function environment(t,{width=1440,selected=true,offline=false,cached=fals
     w.localStorage.setItem('toki-company-v1:'+user.id+':companies',JSON.stringify([company]));
     w.localStorage.setItem('toki-company-v1:'+user.id+':'+company.id,JSON.stringify({userId:user.id,companyId:company.id,board,fetchedAt:Date.now()}));
   }
-  for(const name of ['auth-storage','shared','model','availability','schedule','availability-ui','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-ui','group-view','company-ui'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
+  for(const name of ['auth-storage','shared','model','availability','schedule','availability-ui','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-month','mobile-ui','group-view','company-ui'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
   const finished=w.eval(fs.readFileSync(sourcePath('app.js'),'utf8'));
   await flush();
   return {w,$,session,list,read,calls,finished,get gateShown(){return gateShown;},async signIn(value=user){session.resolve({data:{session:value?{user:value}:null}});await flush();},async companies(value=[company]){list.resolve({data:value});await flush();},async board(value={data:board}){read.resolve(value);await finished;await flush();}};

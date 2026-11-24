@@ -28,6 +28,7 @@ const sources = Object.freeze({
   'google-import-ui.js': 'src/calendar/google-import-ui.js',
   'mobile.css': 'src/ui/mobile.css',
   'mobile-model.js': 'src/core/mobile-model.js',
+  'mobile-month.js': 'src/ui/mobile-month.js',
   'mobile-ui.js': 'src/ui/mobile-ui.js',
   'company.css': 'src/auth/company.css',
   'company-ui.js': 'src/auth/company-ui.js',

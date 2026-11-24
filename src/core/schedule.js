@@ -11,22 +11,47 @@
   }
   function participants(board,group,excluded=[]){const g=board.groups.find(g=>g.id===group);if(!g)throw Error('グループが見つかりません。');return g.members.filter(p=>!excluded.includes(board.people[p]));}
   const meetingsFor=(board,person,date)=>board.meetings.filter(m=>m.date===date&&m.members.includes(person));
-  function personRanges(board,person,date){return A.subtract(board.events.filter(e=>e.person===person&&e.date===date),meetingsFor(board,person,date));}
+  const personEvents=(board,person,date)=>board.events.filter(e=>e.person===person&&e.date===date);
+  function personRanges(board,person,date){return A.subtract(personEvents(board,person,date),meetingsFor(board,person,date));}
+  function splitBoundaries(events){
+    const starts=new Set(events.map(event=>event.start));
+    return events.map(event=>event.end).filter(end=>starts.has(end)&&!events.some(event=>event.start<end&&end<event.end));
+  }
+  function divideAt(ranges,boundaries){
+    if(!boundaries.length)return ranges;
+    const cuts=[...new Set(boundaries)].sort((a,b)=>a-b);
+    return ranges.flatMap(({start,end})=>{
+      const points=[start,...cuts.filter(cut=>start<cut&&cut<end),end];
+      return points.slice(1).map((end,i)=>({start:points[i],end}));
+    });
+  }
+  function personBands(board,person,date){
+    return divideAt(personRanges(board,person,date),splitBoundaries(personEvents(board,person,date)));
+  }
   function ranges(board,key,date,excluded=[]){
     if(key.startsWith('g:'))return A.common(participants(board,key.slice(2),excluded).map(p=>personRanges(board,p,date)));
     const person=Number(key.slice(2));if(!Number.isInteger(person)||!board.people[person])throw Error('人を選択してください。');
-    return personRanges(board,person,date);
+    return personBands(board,person,date);
   }
-  function writePerson(board,person,date,values,makeId=id){
+  function writePerson(board,person,date,values,makeId=id,extraCuts=[]){
     if(!Number.isInteger(person)||!board.people[person]||!M.validDate(date))throw Error('人と日付を確認してください。');
+    const cuts=[...splitBoundaries(personEvents(board,person,date)),...extraCuts];
     board.events=board.events.filter(e=>e.person!==person||e.date!==date);
-    for(const range of A.subtract(values,meetingsFor(board,person,date)))board.events.push({id:makeId(),person,date,...range});
+    for(const range of divideAt(A.subtract(values,meetingsFor(board,person,date)),cuts))board.events.push({id:makeId(),person,date,...range});
   }
   function editPerson(board,person,date,removed=[],added=[],makeId=id){
     const next=M.clone(board);writePerson(next,person,date,[...A.subtract(personRanges(next,person,date),removed),...added],makeId);return check(next);
   }
   function movePersonRange(board,person,target,date,from,to,makeId=id){
     let next=editPerson(board,person,date,[from],[],makeId);return editPerson(next,target,date,[],[to],makeId);
+  }
+  const sameTime=(left,right)=>left.start===right.start&&left.end===right.end;
+  function splitPerson(board,person,date,range,minute,makeId=id){
+    if(!Number.isInteger(minute)||minute%30||minute<=range.start||minute>=range.end||
+      !personBands(board,person,date).some(band=>sameTime(band,range)))throw Error('可能時間の内側にある30分の境界を指定してください。');
+    const next=M.clone(board);
+    writePerson(next,person,date,personRanges(next,person,date),makeId,[minute]);
+    return check(next);
   }
   function meetingSelection(common,origin,cursor=origin){
     const anchor=Math.floor(origin/30)*30,boundary=Math.round(cursor/30)*30;
@@ -35,15 +60,44 @@
     if(!Number.isFinite(origin)||!Number.isFinite(cursor)||origin<common.start||origin>=common.end||cursor<common.start||cursor>common.end||start<common.start||end>common.end)throw Error('⚠️可能時間がありません');
     return {start,end};
   }
+  function addMeeting(board,group,date,range,members,makeId){
+    board.meetings.push({id:makeId(),group,date,start:range.start,end:range.end,members:[...members]});
+    for(const person of members)writePerson(board,person,date,personRanges(board,person,date),makeId);
+  }
   function reserve(board,group,date,removed,excluded=[],makeId=id){
     const next=M.clone(board),members=participants(next,group,excluded),available=ranges(next,`g:${group}`,date,excluded);
     if(!members.length)throw Error('対象のメンバーがいません。');
     if(A.subtract(removed,available).length)throw Error('共通の可能時間が変更されています。最新の表示で操作してください。');
-    for(const range of A.merge(removed)){
-      next.meetings.push({id:makeId(),group,date,...range,members:[...members]});
-      for(const person of members)writePerson(next,person,date,personRanges(next,person,date),makeId);
-    }
+    for(const range of A.merge(removed))addMeeting(next,group,date,range,members,makeId);
     return check(next);
+  }
+  function duplicateDates(board,source,dates,makeId=id){
+    const availability=source.kind==='availability';
+    const original=availability
+      ?personBands(board,source.person,source.date).find(range=>sameTime(range,source))
+      :board.meetings.find(meeting=>source.kind==='meeting'&&source.person===null&&meeting.id===source.id);
+    if(!original)throw Error('複製元の時間帯が見つかりません。');
+    const sourceDate=availability?source.date:original.date;
+    const targets=[...new Set(dates)].sort();
+    if(!targets.length||targets.some(date=>!M.validDate(date)||date===sourceDate))throw Error('複製先の日付を確認してください。');
+    const next=M.clone(board),added=[],existing=[],blocked=[];
+    for(const date of targets){
+      if(availability){
+        const ranges=personRanges(next,source.person,date);
+        if(!A.subtract([original],ranges).length){existing.push(date);continue;}
+        if(A.intersect([original],meetingsFor(next,source.person,date)).length){blocked.push(date);continue;}
+        writePerson(next,source.person,date,[...ranges,original],makeId);
+      }else{
+        const {group,members}=original;
+        if(next.meetings.some(meeting=>meeting.group===group&&meeting.date===date&&sameTime(meeting,original)&&
+          meeting.members.length===members.length&&members.every(person=>meeting.members.includes(person)))){existing.push(date);continue;}
+        const common=A.common(members.map(person=>personRanges(next,person,date)));
+        if(A.subtract([original],common).length){blocked.push(date);continue;}
+        addMeeting(next,group,date,original,members,makeId);
+      }
+      added.push(date);
+    }
+    return {board:added.length?check(next):board,added,existing,blocked};
   }
   function release(board,meetingId,{person=null,start=null,end=null}={},makeId=id){
     const next=M.clone(board),meeting=next.meetings.find(m=>m.id===meetingId);
@@ -130,6 +184,6 @@
       if(key===group)return `hsl(${hue} 55% 35%)`;
     }
   }
-  const api={migrate,participants,personRanges,ranges,editPerson,movePersonRange,meetingSelection,reserve,release,meetingAvailability,meetingDragRange,adjustMeeting,removeGroup,exportText,exportMeetings,color};
+  const api={migrate,participants,personRanges,personBands,ranges,editPerson,movePersonRange,splitPerson,meetingSelection,reserve,duplicateDates,release,meetingAvailability,meetingDragRange,adjustMeeting,removeGroup,exportText,exportMeetings,color};
   if(node)module.exports=api;else window.TokiSchedule=api;
 })();

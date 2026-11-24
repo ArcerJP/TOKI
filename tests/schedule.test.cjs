@@ -1,6 +1,33 @@
 const test=require('node:test'),assert=require('node:assert/strict'),S=require('../src/core/schedule.js'),M=require('../src/core/model.js');
 const date='2026-10-15',r=(start,end)=>({start,end});let serial=0;const id=()=>`new-${++serial}`;
 const base=()=>({schemaVersion:4,people:['A','B','C'],groups:[{id:'g',name:'企画局',members:[0,1,2]},{id:'h',name:'別グループ',members:[0,1]}],events:[{id:'a',person:0,date,...r(540,1080)},{id:'b',person:1,date,...r(600,1020)},{id:'c',person:2,date,...r(720,960)}],meetings:[]});
+test('split availability survives storage and other edits while keeping the same group common time',()=>{
+  const start=base(),split=S.splitPerson(start,0,date,r(540,1080),780,id);
+  assert.deepEqual(S.personBands(S.migrate(split),0,date),[r(540,780),r(780,1080)]);
+  assert.deepEqual(S.ranges(split,'g:g',date),S.ranges(start,'g:g',date));
+  const edited=S.editPerson(split,0,date,[],[r(1080,1140)],id);
+  assert.deepEqual(S.personBands(edited,0,date),[r(540,780),r(780,1140)]);
+  const removed=S.editPerson(edited,0,date,[r(540,780)],[],id);
+  assert.deepEqual(S.personBands(removed,0,date),[r(780,1140)]);
+  assert.throws(()=>S.splitPerson(start,0,date,r(540,1080),540,id),/30分/);
+});
+test('duplicating a group MTG preserves its registered participants, skips conflicts, and is idempotent',()=>{
+  const copy='2026-11-01',blocked='2026-11-02';
+  let board=S.reserve(base(),'g',date,[r(780,840)],['C'],id);
+  const original=board.meetings[0];
+  board=M.setGroup(board,'g','企画局',[1,2]);
+  for(const day of [copy,blocked])for(const person of [0,1])board=S.editPerson(board,person,day,[],[r(720,900)],id);
+  board=S.reserve(board,'h',blocked,[r(810,870)],[],id);
+  const source={kind:'meeting',id:original.id,person:null};
+  const result=S.duplicateDates(board,source,[blocked,copy,copy],id);
+  assert.deepEqual(result.added,[copy]);assert.deepEqual(result.blocked,[blocked]);
+  const duplicated=result.board.meetings.find(meeting=>meeting.date===copy);
+  assert.deepEqual(duplicated,{...original,id:duplicated.id,date:copy});
+  assert.deepEqual(S.personRanges(result.board,0,copy),[r(720,780),r(840,900)]);
+  assert.deepEqual(S.personRanges(result.board,0,blocked),S.personRanges(board,0,blocked));
+  assert.deepEqual(S.duplicateDates(result.board,source,[copy],id).existing,[copy]);
+  assert.equal(board.meetings.some(meeting=>meeting.date===copy),false);
+});
 test('groups show the exact intersection and local exclusions do not alter stored memberships',()=>{
   const b=base();assert.deepEqual(S.ranges(b,'g:g',date),[r(720,960)]);assert.deepEqual(S.ranges(b,'g:g',date,['C']),[r(600,1020)]);
   assert.deepEqual(S.ranges(b,'g:g',date,['A','B','C']),[]);assert.deepEqual(b.groups[0].members,[0,1,2]);

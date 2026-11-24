@@ -20,7 +20,7 @@ function environment({personal=false,availability=false,online=true,copyFails=fa
   function tick(ms){now+=ms;for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}}
   Object.assign(window,{TokiAvailability:A,innerWidth:1000,innerHeight:700});
   vm.runInNewContext(source,{window,document,setTimeout,clearTimeout,navigator:{clipboard:{writeText:async text=>{if(copyFails)throw Error('Denied');copies.push(text);}}}});
-  const api=window.TokiMeetingMenu({root,resolve:()=>display,board:()=>current,canOpen:()=>!$('meeting-menu').open,canDelete:()=>online,onOpen:()=>opened++,release:async target=>{releases.push(target);current=S.release(current,target.id,target.person===null?{}:{person:target.person});return true;},removeAvailability:async target=>{releases.push(target);current=S.editPerson(current,target.person,target.date,[target],[]);return true;},notify:text=>notifications.push(text),settled:()=>{}});
+  const api=window.TokiMeetingMenu({root,resolve:()=>display,board:()=>current,canOpen:()=>!$('meeting-menu').open,canDelete:()=>online,canDuplicate:target=>online&&(target.kind==='availability'||target.person===null),openDuplicate:()=>{},onOpen:()=>opened++,release:async target=>{releases.push(target);current=S.release(current,target.id,target.person===null?{}:{person:target.person});return true;},removeAvailability:async target=>{releases.push(target);current=S.editPerson(current,target.person,target.date,[target],[]);return true;},notify:text=>notifications.push(text),settled:()=>{}});
   const down=()=>root.emit('pointerdown',{target:bar,button:0,isPrimary:true,pointerId:1,clientX:950,clientY:650});
   const up=()=>document.emit('pointerup',{pointerId:1});
   return {$,api,root,bar,document,window,down,up,tick,copies,notifications,releases,get opened(){return opened;},get board(){return current;}};
@@ -53,13 +53,13 @@ test('group copy uses the requested date and time format, and group deletion res
 });
 test('personal deletion removes only that participant and updates the group meeting',async()=>{
   const e=environment({personal:true});e.down();e.tick(600);e.up();e.tick(0);
-  assert.equal(e.$('copy-meeting-time').hidden,true);await e.$('delete-meeting').onclick();
+  assert.equal(e.$('copy-meeting-time').hidden,true);assert.equal(e.$('duplicate-time').hidden,true);await e.$('delete-meeting').onclick();
   assert.deepEqual(e.board.meetings[0].members,[1]);assert.deepEqual(S.personRanges(e.board,0,'2026-10-05'),[{start:540,end:1080}]);
   assert.deepEqual(S.personRanges(e.board,1,'2026-10-05'),[{start:600,end:1080}]);
 });
 test('offline menus allow copying and closing but never release a meeting',async()=>{
   const e=environment({online:false});e.down();e.tick(600);e.up();e.tick(0);
-  assert.equal(e.$('delete-meeting').disabled,true);await e.$('delete-meeting').onclick();assert.equal(e.releases.length,0);
+  assert.equal(e.$('delete-meeting').disabled,true);assert.equal(e.$('duplicate-time').disabled,true);await e.$('delete-meeting').onclick();assert.equal(e.releases.length,0);
   e.$('close-meeting-menu').onclick();assert.equal(e.$('meeting-menu').open,false);
 });
 test('clipboard rejection keeps the text available for manual copying',async()=>{

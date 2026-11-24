@@ -35,6 +35,27 @@
   function move(range,mode,origin,cursor) {
     return S.meetingDragRange(range,mode,origin,cursor);
   }
-  const api={rows,apply,move};
+  function monthDates(date){
+    const month=new Date(date.slice(0,7)+'-01T00:00:00Z');
+    const end=new Date(month);end.setUTCMonth(end.getUTCMonth()+1,0);
+    return Array.from({length:end.getUTCDate()},(_,index)=>date.slice(0,7)+'-'+String(index+1).padStart(2,'0')).filter(M.validDate);
+  }
+  function shiftMonth(date,offset){
+    const month=new Date(date.slice(0,7)+'-01T00:00:00Z');
+    month.setUTCMonth(month.getUTCMonth()+offset);
+    const next=month.toISOString().slice(0,7);
+    if(next<M.MIN_DATE.slice(0,7)||next>M.MAX_DATE.slice(0,7))return null;
+    const days=monthDates(next+'-01');
+    return days.find(day=>day.slice(8)>=date.slice(8))||days.at(-1)||null;
+  }
+  function applyMonthEdit(board,{person,date,targetDate=date,from,to}){
+    if(date!==targetDate&&(!from||to.end-to.start!==from.end-from.start))throw Error('日をまたぐ移動では時間帯の長さを維持してください。');
+    if(from&&!S.personBands(board,person,date).some(range=>range.start===from.start&&range.end===from.end))throw Error('最新の時間帯から操作してください。');
+    if(to.start<to.end&&A.intersect([to],board.meetings.filter(m=>m.date===targetDate&&m.members.includes(person))).length)throw Error('⚠ 登録済みのMTGと重なります。');
+    if(date===targetDate)return apply(board,{kind:'person',person,date,from,to});
+    const removed=S.editPerson(board,person,date,[from],[]);
+    return apply(removed,{kind:'person',person,date:targetDate,to});
+  }
+  const api={rows,apply,move,monthDates,shiftMonth,applyMonthEdit};
   if(node)module.exports=api;else window.TokiMobileModel=api;
 })();
