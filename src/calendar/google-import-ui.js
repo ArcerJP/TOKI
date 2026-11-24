@@ -2,6 +2,7 @@
 window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true,linkGuest})=>{
   const $=id=>document.getElementById(id),api=window.TokiGoogleCalendar,model=window.TokiCalendarImport;
   const dialog=$('google-import-dialog'),inputs=['google-import-person','google-time-min','google-time-max'];
+  const margin=$('google-import-margin'),marginInfo=$('google-import-margin-info'),marginHelp=$('google-import-margin-help');
   let loading=false,sdkReady=false,preview=null,base=null,operation=0,request=null;
   let calendars=[],chosen=new Set(),listReady=false;
   function error(message){
@@ -15,7 +16,9 @@ window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true
     $('google-login').textContent=api.connected?'Googleアカウントを変更':'Googleでログイン';
     $('google-logout').hidden=!api.connected;$('google-logout').disabled=loading;
     $('google-preview-button').disabled=loading||!api.connected||!listReady||!chosen.size||!canOpen();
-    $('google-apply-button').disabled=loading||!preview||!canOpen();
+    $('google-apply-button').disabled=loading||!preview||Boolean(preview.problem)||!canOpen();
+    margin.disabled=loading;
+    for(const field of preview?.fields||[]){field.start.disabled=loading;field.end.disabled=loading;}
     for(const id of inputs)$(id).disabled=loading;
     $('google-calendars').hidden=!api.connected;
     $('google-calendar-options').disabled=loading||!listReady;
@@ -60,6 +63,7 @@ window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true
     });
     const first=today(),M=window.TokiModel;
     $('google-time-min').value=first;$('google-time-max').value=M.shiftDate(first,7)||M.MAX_DATE;
+    margin.value='0';marginHelp.hidden=true;marginInfo.setAttribute('aria-expanded','false');
     error('');invalidate();resetCalendars();controls();dialog.showModal();
     const sequence=++operation;
     try{if(!linkGuest){await api.load();if(sequence!==operation)return;sdkReady=true;if(api.connected)await loadCalendars(sequence);}}
@@ -90,22 +94,83 @@ window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true
     for(const checkbox of $('google-calendar-list').querySelectorAll('input'))checkbox.checked=chosen.has(checkbox.value);
     invalidate();error('');controls();
   });
-  const time=minute=>`${String(Math.floor(minute/60)).padStart(2,'0')}:${String(minute%60).padStart(2,'0')}`;
+  const time=window.TokiAvailability.time;
+  function updatePreview(){
+    const {source,fields}=preview,groups=new Map();
+    const parsed=fields.map(field=>{
+      const slot={date:field.date,start:model.clockMinutes(field.start.value),end:model.clockMinutes(field.end.value)};
+      const issue=source.check(slot);
+      if(!issue){
+        if(!groups.has(slot.date))groups.set(slot.date,[]);
+        groups.get(slot.date).push(slot);
+      }
+      return {field,slot,issue};
+    });
+    const draft=[];let invalid=false;
+    for(const {field,slot,issue} of parsed){
+      const problem=issue||((groups.get(slot.date)||[]).some(other=>other!==slot&&slot.start<other.end&&other.start<slot.end)?'同じ日の可能時間が重なっています。':'');
+      field.message.textContent=problem;field.message.hidden=!problem;
+      for(const input of [field.start,field.end])input.setAttribute('aria-invalid',String(Boolean(problem)));
+      if(problem)invalid=true;else draft.push(slot);
+    }
+    preview.draft=draft;
+    preview.problem=invalid?'入力した時刻を確認してください。':draft.length>source.capacity?'予定の上限（全員合計2000件）を超えます。取得期間を短くしてください。':'';
+    const notice=$('google-import-time-error');notice.textContent=preview.problem;notice.hidden=!preview.problem;
+    const minutes=draft.reduce((sum,r)=>sum+r.end-r.start,0),hours=Math.floor(minutes/60),remainder=minutes%60;
+    const duration=[hours&&`${hours}時間`,remainder&&`${remainder}分`].filter(Boolean).join('')||'0分';
+    $('google-import-summary').textContent=`${preview.calendarCount}件のカレンダーから、${source.personName}：${draft.length}枠・計${duration}を可能時間として反映します。既存の予定${source.affected}件の指定期間内を置き換えます。`;
+    controls();
+  }
   function renderPreview(){
-    const {ranges,affected,personName,range}=preview.plan;
-    const minutes=ranges.reduce((sum,r)=>sum+r.end-r.start,0);
-    $('google-import-summary').textContent=`${preview.calendarCount}件のカレンダーから、${personName}：${ranges.length}枠・計${minutes/60}時間を可能時間として反映します。既存の予定${affected}件の指定期間内を置き換えます。`;
+    const state=preview,{ranges,range}=state.source,trim=Number(margin.value),days=new Map();
+    preview.fields=[];
+    for(const [index,slot] of ranges.entries()){
+      const edited=preview.edits.get(index);
+      if(!edited&&slot.end-slot.start<=2*trim)continue;
+      const entry={index,start:edited?.start??time(slot.start+trim),end:edited?.end??time(slot.end-trim)};
+      if(!days.has(slot.date))days.set(slot.date,[]);
+      days.get(slot.date).push(entry);
+    }
     const rows=$('google-import-rows');rows.replaceChildren();
+    const formatter=new Intl.DateTimeFormat('ja-JP',{month:'numeric',day:'numeric',weekday:'short',timeZone:'UTC'});
     for(let date=range.first;date&&date<=range.last;date=window.TokiModel.shiftDate(date,1)){
       const tr=document.createElement('tr'),day=document.createElement('th'),slots=document.createElement('td');day.scope='row';
-      day.textContent=new Intl.DateTimeFormat('ja-JP',{month:'numeric',day:'numeric',weekday:'short',timeZone:'UTC'}).format(new Date(date+'T00:00:00Z'));
-      slots.textContent=ranges.filter(r=>r.date===date).map(r=>`${time(r.start)}〜${time(r.end)}`).join('、')||'可能時間なし';
+      day.textContent=formatter.format(new Date(date+'T00:00:00Z'));
+      const entries=days.get(date)||[];
+      if(!entries.length)slots.textContent='可能時間なし';
+      for(const [number,entry] of entries.entries()){
+        const row=document.createElement('div'),message=document.createElement('small');
+        row.className='import-time-row';message.className='import-time-error error';message.id='google-import-time-'+entry.index;
+        const field={date,message};
+        for(const [key,label] of [['start','開始時刻'],['end','終了時刻']]){
+          const input=document.createElement('input');input.type='text';input.inputMode='numeric';input.autocomplete='off';
+          input.className='import-time-input';input.value=entry[key];
+          input.setAttribute('aria-label',`${day.textContent} ${number+1}枠目の${label}`);
+          input.setAttribute('aria-describedby',`google-import-time-help ${message.id}`);
+          if(key==='end')row.append('〜');
+          row.append(input);field[key]=input;
+          input.addEventListener('input',()=>{
+            if(preview!==state)return;
+            state.edits.set(entry.index,{start:field.start.value,end:field.end.value});updatePreview();
+          });
+          input.addEventListener('blur',()=>{
+            if(preview!==state)return;
+            const minute=model.clockMinutes(input.value);
+            if(minute===null||input.value===time(minute))return;
+            input.value=time(minute);state.edits.set(entry.index,{start:field.start.value,end:field.end.value});
+          });
+        }
+        row.append(message);slots.append(row);preview.fields.push(field);
+      }
       tr.append(day,slots);rows.append(tr);
     }
     $('google-import-preview').hidden=false;
-    const heading=$('google-import-preview-title');
-    heading.focus({preventScroll:true});heading.scrollIntoView?.({block:'start'});
+    updatePreview();
   }
+  margin.onchange=()=>{if(preview&&!loading)renderPreview();};
+  marginInfo.onclick=()=>{
+    marginHelp.hidden=!marginHelp.hidden;marginInfo.setAttribute('aria-expanded',String(!marginHelp.hidden));
+  };
   $('google-preview-button').onclick=async()=>{
     error('');invalidate();const sequence=++operation;
     try{
@@ -118,7 +183,10 @@ window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true
       const calendarIds=calendars.filter(c=>chosen.has(c.id)).map(c=>c.id);
       loading=true;controls();$('google-login-status').textContent='予定ありの時間帯を取得中…';request=new AbortController();
       const busy=await api.fetchBusy(range,calendarIds,request.signal);if(sequence!==operation)return;
-      const state=current();preview={plan:model.plan(state.board,person,range,busy),fingerprint:state.fingerprint,calendarCount:calendarIds.length};renderPreview();
+      const state=current();preview={source:model.prepare(state.board,person,range,busy),fingerprint:state.fingerprint,calendarCount:calendarIds.length,edits:new Map()};
+      renderPreview();
+      const heading=$('google-import-preview-title');
+      heading.focus({preventScroll:true});heading.scrollIntoView?.({block:'start'});
     }catch(failure){
       if(sequence!==operation)return;
       const unavailable=calendars.filter(calendar=>failure.calendarIds?.includes(calendar.id)).map(calendar=>calendar.name);
@@ -127,12 +195,13 @@ window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true
     finally{if(sequence===operation){loading=false;request=null;controls();}}
   };
   $('google-apply-button').onclick=async()=>{
-    if(!preview||loading)return;error('');
+    if(!preview||loading||preview.problem)return;error('');
     try{
-      current();if(!canImportPerson(preview.plan.person))throw Error('取り込み先の人を確認してください。');loading=true;controls();
-      if(await apply(preview.plan,preview.fingerprint))dialog.close();
-      else {invalidate();error('保存できませんでした。画面を閉じて最新の予定を確認し、再度取り込んでください。');}
-    }catch(failure){invalidate();error(failure.message);}
+      current();if(!canImportPerson(preview.source.person))throw Error('取り込み先の人を確認してください。');
+      const plan=preview.source.build(preview.draft);loading=true;controls();
+      if(await apply(plan,preview.fingerprint))dialog.close();
+      else error('保存できませんでした。画面を閉じて最新の予定を確認し、再度取り込んでください。');
+    }catch(failure){error(failure.message);}
     finally{loading=false;controls();}
   };
   return {refresh:()=>{if(dialog.open)controls();}};

@@ -10,6 +10,21 @@ html:not([data-toki-top-level]){display:none!important}
 @media(max-width:700px){.app{padding:0 12px 15px}.topbar{height:68px}.brand-divider{margin:0}.brand{gap:8px}.brand strong{font-size:18px}h1{font-size:15px}#save-status{max-width:90px;text-align:right;font-size:11px}.toolbar{gap:10px;margin:4px 0 16px}.actions{width:100%}.actions #add-button{margin-left:auto}.date-tools>button.date-picker-trigger{min-width:205px;font-size:17px}.chart-scroll{max-height:calc(100dvh - 275px)}button{padding:9px 10px}footer span:last-child{display:none}}
 [hidden]{display:none!important}.account-tools{display:flex;align-items:center;gap:12px}.account-tools a{font-size:12px;color:var(--green)}.auth-gate{min-height:100dvh;display:grid;place-items:center;padding:24px}.auth-card{width:min(420px,100%);padding:32px;background:white;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 45px #203e3210}.auth-card h1{font-size:22px;margin:26px 0 10px}.auth-card p{color:#61786e;line-height:1.8;font-size:14px}.auth-card #join-submit{width:100%;margin-top:22px}.auth-card #auth-message{color:#914235;white-space:pre-wrap}.auth-card #auth-signed-in{display:flex;gap:10px}@media(max-width:700px){.account-tools{gap:7px}.account-tools a{max-width:45px;font-size:11px}.account-tools button{font-size:11px;padding:6px}.auth-card{padding:24px}}
 @page{size:A3 landscape;margin:12mm}
+#google-import-dialog { --import-pad:28px; padding:0 var(--import-pad) var(--import-pad); scroll-padding-block-start:calc(max(10px,env(safe-area-inset-top)) + 56px); }
+#google-import-dialog > .dialog-heading { position:sticky; top:0; z-index:4; gap:10px; margin:0 calc(-1 * var(--import-pad)) 12px; padding:max(10px,env(safe-area-inset-top)) var(--import-pad) 10px; background:#fff; border-bottom:1px solid #e6eeea; }
+#close-google-import { flex:none; min-width:44px; min-height:44px; }
+.import-preview-heading { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; }
+.import-preview-heading h3 { margin:4px 0; }
+.import-margin-controls { display:flex; align-items:center; gap:5px; }
+.import-margin-controls label { margin:0; font-size:13px; }
+#google-import-margin { width:auto; min-width:5em; }
+#google-import-margin-info { min-width:44px; min-height:44px; padding:0; border:0; color:var(--green); font-size:17px; }
+#google-import-margin-help { padding:8px 10px; border-radius:6px; background:#f0f6f3; }
+.import-time-row { display:flex; flex-wrap:wrap; align-items:center; gap:3px 5px; margin-block:3px; }
+#google-import-dialog .import-time-input { width:4.5em; min-width:0; padding:5px 6px; font-variant-numeric:tabular-nums; }
+#google-import-dialog .import-time-input[aria-invalid="true"] { border-color:#b8443a; }
+.import-time-error { flex-basis:100%; }
+@media (max-width:420px) { #google-import-dialog .import-preview-table th, #google-import-dialog .import-preview-table td { padding-inline:7px; } }
 @media print{.auth-gate{display:none!important}:root{background:white}}
 @media print{.print-day .name-heading{font-size:10px;padding:8px;white-space:nowrap}}
 @media print{html,body{background:white;font-size:10pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}.app,dialog,.toast{display:none!important}#print-area{display:block}.print-day{break-after:page;page-break-after:always}.print-day:last-child{break-after:auto;page-break-after:auto}.print-heading{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 14px}.print-heading h2{font-size:19pt;margin:0}.print-heading span{font-size:10pt;color:#536d60}.print-day .chart{min-width:0;width:100%;border:1px solid #cedcd3;--name-width:90px}.print-day .chart-header,.print-day .person-name,.print-day .name-heading{position:static}.print-day .person-row,.print-day .timeline{min-height:34px;break-inside:avoid}.print-day .event{top:4px;height:26px;font-size:10px;padding:3px 5px;border-left-width:2px}.print-day .event-time{font-size:9px;margin-left:5px}.print-day .time-tick{font-size:9px}.print-day .person-name{font-size:11px}.print-day .resize-handle{display:none}.print-notes{font-size:10pt;line-height:1.5;margin-top:10px;white-space:pre-wrap;overflow-wrap:anywhere}.print-note{break-inside:avoid;margin:5px 0}.print-footer{font-size:9pt;color:#657b70;margin-top:12px}}

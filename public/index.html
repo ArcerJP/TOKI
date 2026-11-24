@@ -571,7 +571,7 @@
         <summary>取り込みルール・データの扱い</summary>
         <ul class="import-rules">
           <li>
-            30分枠の一部にでも予定があれば、その枠は可能時間にしません。例：11:10〜11:50の予定
+            自動計算では、30分枠の一部にでも予定があれば、その枠は可能時間にしません。例：11:10〜11:50の予定
             → 11:00〜12:00を除外。
           </li>
           <li>
@@ -618,8 +618,25 @@
         hidden
         aria-labelledby="google-import-preview-title"
       >
-        <h3 id="google-import-preview-title" tabindex="-1">反映する可能時間</h3>
+        <div class="import-preview-heading">
+          <h3 id="google-import-preview-title" tabindex="-1">反映する可能時間</h3>
+          <div class="import-margin-controls">
+            <label for="google-import-margin">余裕時間</label>
+            <select id="google-import-margin">
+              <option value="0">0分</option>
+              <option value="15">15分</option>
+              <option value="30">30分</option>
+              <option value="45">45分</option>
+              <option value="60">60分</option>
+            </select>
+            <button type="button" id="google-import-margin-info" aria-label="余裕時間の説明" aria-controls="google-import-margin-help" aria-expanded="false">ⓘ</button>
+          </div>
+        </div>
+        <p id="google-import-margin-help" class="import-help" hidden>
+          各可能時間の開始を遅らせ、終了を早めます。例えば10:00〜18:00に30分の余裕を取ると、10:30〜17:30になります。自動調整で残り時間がなくなる枠は表示されません。手入力した枠はそのままです。
+        </p>
         <p id="google-import-summary"></p>
+        <p class="import-help" id="google-import-time-help">時刻は1分単位で編集できます。10:30または1030の形式で入力してください。</p>
         <div class="import-preview-scroll">
           <table class="import-preview-table">
             <thead>
@@ -631,6 +648,7 @@
             <tbody id="google-import-rows"></tbody>
           </table>
         </div>
+        <p id="google-import-time-error" class="error" role="status" hidden></p>
         <p class="import-help">
         「この内容で置き換える」で保存します。共有版では参加を許可された組織のメンバーが閲覧・編集できます。直後は「元に戻す」で取り消せます。
         </p>

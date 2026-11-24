@@ -18,8 +18,11 @@ async function environment(t){
   t.after(()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[]);});
   async function click(id){$(id).click();await flush();}
   const inputs=()=>[...$('google-calendar-list').querySelectorAll('input')];
+  const times=()=>[...$('google-import-rows').querySelectorAll('input')];
+  const timeValues=()=>times().map(field=>field.value);
+  const setMargin=value=>{const select=$('google-import-margin');select.value=String(value);select.dispatchEvent(new w.Event('change'));};
   const input=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new w.Event('input'));};
-  return {w,d,$,items,fetches,saves,click,inputs,input,setList:fn=>listHandler=fn,setBusy:fn=>busyHandler=fn,failLogin:()=>loginFailure=true,update:()=>fingerprint='changed',async open(){await click('google-import-button');if(!connected)await click('google-login');},setRange(){input('google-time-min','2026-10-05');input('google-time-max','2026-10-06');}};
+  return {w,d,$,items,fetches,saves,click,inputs,input,times,timeValues,setMargin,setList:fn=>listHandler=fn,setBusy:fn=>busyHandler=fn,failLogin:()=>loginFailure=true,update:()=>fingerprint='changed',async open(){await click('google-import-button');if(!connected)await click('google-login');},setRange(){input('google-time-min','2026-10-05');input('google-time-max','2026-10-06');}};
 }
 
 test('calendar selection starts with all checked and names remain plain text',async t=>{
@@ -32,11 +35,39 @@ test('calendar selection starts with all checked and names remain plain text',as
 
 test('selected-calendar busy time affects preview, selection changes invalidate it, save requires explicit action',async t=>{
   const e=await environment(t);await e.open();e.setRange();await e.click('google-preview-button');
-  assert.deepEqual(e.fetches[0].ids,['owner@example.test','shared','text']);assert.match(e.$('google-import-rows').textContent,/08:00〜11:00、12:00〜24:00/);assert.equal(e.saves.length,0);
+  assert.deepEqual(e.fetches[0].ids,['owner@example.test','shared','text']);assert.deepEqual(e.timeValues(),['08:00','11:00','12:00','24:00']);assert.equal(e.saves.length,0);
   assert.equal(e.d.activeElement,e.$('google-import-preview-title'));
   e.inputs()[1].click();assert.equal(e.$('google-import-preview').hidden,true);assert.equal(e.$('google-apply-button').disabled,true);
-  await e.click('google-preview-button');assert.deepEqual(e.fetches[1].ids,['owner@example.test','text']);assert.match(e.$('google-import-rows').textContent,/08:00〜24:00/);assert.match(e.$('google-import-summary').textContent,/2件のカレンダー/);
+  await e.click('google-preview-button');assert.deepEqual(e.fetches[1].ids,['owner@example.test','text']);assert.deepEqual(e.timeValues(),['08:00','24:00']);assert.match(e.$('google-import-summary').textContent,/2件のカレンダー/);
   await e.click('google-apply-button');assert.equal(e.saves.length,1);assert.equal(e.$('google-import-dialog').open,false);
+});
+
+test('margin shortens both edges, removes exhausted slots and keeps manually adjusted times',async t=>{
+  const e=await environment(t);await e.open();e.setRange();
+  const busy=(start,end)=>({start:Date.parse(`2026-10-05T${start}:00+09:00`),end:Date.parse(`2026-10-05T${end}:00+09:00`)});
+  e.setBusy(()=>[busy('08:00','10:00'),busy('18:00','23:30')]);
+  await e.click('google-preview-button');assert.equal(e.$('google-import-margin').value,'0');
+  assert.deepEqual(e.timeValues(),['10:00','18:00','23:30','24:00']);
+  e.setMargin(15);assert.deepEqual(e.timeValues(),['10:15','17:45']);
+  e.setMargin(30);assert.deepEqual(e.timeValues(),['10:30','17:30']);
+  await e.click('google-import-margin-info');assert.equal(e.$('google-import-margin-help').hidden,false);
+  const start=e.times()[0];start.value=' １０ ： ２０ ';start.dispatchEvent(new e.w.Event('input'));start.dispatchEvent(new e.w.Event('blur'));
+  assert.equal(start.value,'10:20');e.setMargin(45);assert.deepEqual(e.timeValues(),['10:20','17:30']);
+  assert.equal(e.fetches.length,1);
+  await e.click('google-apply-button');assert.deepEqual(structuredClone(e.saves[0].plan.ranges),[{date:'2026-10-05',start:620,end:1050}]);
+});
+
+test('custom times respect exact busy boundaries and reject invalid and overlapping edits',async t=>{
+  const e=await environment(t);await e.open();e.setRange();await e.click('google-preview-button');
+  const edit=(index,value)=>{const field=e.times()[index];field.value=value;field.dispatchEvent(new e.w.Event('input'));};
+  edit(1,'11:11');assert.equal(e.$('google-apply-button').disabled,true);assert.match(e.$('google-import-rows').textContent,/重なっています/);
+  edit(1,'1110');assert.equal(e.$('google-apply-button').disabled,false);
+  edit(1,'11:90');assert.equal(e.$('google-apply-button').disabled,true);
+  edit(1,'08:00');assert.equal(e.$('google-apply-button').disabled,true);assert.match(e.$('google-import-rows').textContent,/終了は開始より後/);
+  edit(1,'11:10');edit(2,'08:30');edit(3,'09:00');assert.equal(e.$('google-apply-button').disabled,true);assert.match(e.$('google-import-rows').textContent,/同じ日の可能時間が重なっています/);
+  await e.click('google-apply-button');assert.equal(e.saves.length,0);
+  edit(2,'11:50');edit(3,'24:00');assert.equal(e.$('google-apply-button').disabled,false);
+  await e.click('google-apply-button');assert.deepEqual(structuredClone(e.saves[0].plan.ranges),[{date:'2026-10-05',start:480,end:670},{date:'2026-10-05',start:710,end:1440}]);
 });
 
 test('list failure and empty lists disable import; retry reloads all choices',async t=>{

@@ -5,6 +5,15 @@ const C=window.TokiCalendarImport;
 const period=(start='2026-10-03T08:00',end='2026-10-04T00:00')=>C.period(start,end);
 const busy=(start,end)=>({start:Date.parse(start),end:Date.parse(end)});
 const own=value=>structuredClone(value);
+test('editable import rejects TOKI MTG overlap and permits exact boundaries',()=>{
+  const original={schemaVersion:4,people:['A','B'],groups:[{id:'g',name:'局',members:[0,1]}],events:[],meetings:[{id:'meeting',group:'g',date:'2026-10-03',start:601,end:659,members:[0,1]}]};
+  let serial=0;
+  const draft=C.prepare(original,0,period(),[],()=>`edit-${++serial}`);
+  assert.throws(()=>draft.build([{date:'2026-10-03',start:540,end:602}]),/MTGと重なっています/);
+  const plan=draft.build([{date:'2026-10-03',start:540,end:601},{date:'2026-10-03',start:659,end:700}]);
+  assert.deepEqual(own(plan.board.meetings),original.meetings);
+  assert.deepEqual(own(plan.board.events.map(({start,end})=>[start,end])),[[540,601],[659,700]]);
+});
 test('11:10–11:50 excludes both half-hour slots from 11:00–12:00',()=>{
   const ranges=C.availability(period(),[busy('2026-10-03T11:10:00+09:00','2026-10-03T11:50:00+09:00')]);
   assert.deepEqual(own(ranges),[{date:'2026-10-03',start:480,end:660},{date:'2026-10-03',start:720,end:1440}]);

@@ -42,11 +42,23 @@
       return {start,end};
     }));
   }
-  function availability(range,busy){
-    if(!Array.isArray(busy)||busy.some(b=>!Number.isFinite(b.start)||!Number.isFinite(b.end)||b.end<=b.start))throw Error('予定の時間帯が正しくありません。');
+  function mergeBusy(range,busy){
     const intervals=busy.filter(b=>b.end>range.timeMin&&b.start<range.timeMax).map(b=>({...b})).sort((a,b)=>a.start-b.start);
     const merged=[];
     for(const b of intervals){const last=merged.at(-1);if(last&&b.start<=last.end)last.end=Math.max(last.end,b.end);else merged.push(b);}
+    return merged;
+  }
+  function overlaps(merged,start,end){
+    let lo=0,hi=merged.length;
+    while(lo<hi){
+      const mid=Math.floor((lo+hi)/2);
+      if(merged[mid].end<=start)lo=mid+1;else hi=mid;
+    }
+    return lo<merged.length&&merged[lo].start<end;
+  }
+  function availability(range,busy){
+    if(!Array.isArray(busy)||busy.some(b=>!Number.isFinite(b.start)||!Number.isFinite(b.end)||b.end<=b.start))throw Error('予定の時間帯が正しくありません。');
+    const merged=mergeBusy(range,busy);
     const ranges=[];let at=0;
     for(let day=midnight(range.first);day<range.timeMax;day+=DAY){
       const date=local(day).slice(0,10);
@@ -62,12 +74,24 @@
     }
     return ranges;
   }
-  function plan(board,person,range,busy,makeId=()=>`google-${crypto.randomUUID()}`){
+  function clockMinutes(text){
+    const value=text.trim().replace(/[０-９]/g,digit=>String(digit.charCodeAt(0)-0xff10)).replace('：',':');
+    const match=/^(\d{1,2})\s*:\s*(\d{2})$/.exec(value)||/^(\d{1,2})(\d{2})$/.exec(value);
+    if(!match)return null;
+    const hour=Number(match[1]),minute=Number(match[2]);
+    return minute<60&&(hour<24||hour===24&&minute===0)?hour*60+minute:null;
+  }
+  function prepare(board,person,range,busy,makeId=()=>`google-${crypto.randomUUID()}`){
     const M=window.TokiModel;
     if(!M.valid(board)||!Number.isInteger(person)||!board.people[person])throw Error('取り込み先の人を選択してください。');
-    const next=M.clone(board),rawRanges=availability(range,busy),events=[];let affected=0;
-    const ranges=board.schemaVersion===4?rawRanges.flatMap(slot=>window.TokiAvailability.subtract([slot],board.meetings.filter(m=>m.date===slot.date&&m.members.includes(person))).map(r=>({...r,date:slot.date}))):rawRanges;
-    for(const event of next.events){
+    const meetings=board.schemaVersion===4?board.meetings.filter(meeting=>meeting.members.includes(person)):[];
+    const ranges=availability(range,busy).flatMap(slot=>window.TokiAvailability.subtract([slot],meetings.filter(meeting=>meeting.date===slot.date)).map(r=>({...r,date:slot.date})));
+    const occupied=mergeBusy(range,busy.concat(meetings.map(meeting=>{
+      const day=midnight(meeting.date);
+      return {start:day+meeting.start*MINUTE,end:day+meeting.end*MINUTE};
+    })));
+    const events=[];let affected=0;
+    for(const event of board.events){
       const day=midnight(event.date),start=day+event.start*MINUTE,end=day+event.end*MINUTE;
       if(event.person!==person||end<=range.timeMin||start>=range.timeMax){events.push(event);continue;}
       affected++;
@@ -75,11 +99,33 @@
       if(left)events.push({...event,end:(range.timeMin-day)/MINUTE});
       if(right)events.push({...event,id:left?makeId():event.id,start:(range.timeMax-day)/MINUTE});
     }
-    for(const slot of ranges)events.push({id:makeId(),person,...slot,...(board.schemaVersion===4?{}:{title:'可能時間',detail:''})});
-    next.events=events;
-    if(events.length>2000)throw Error('予定の上限（全員合計2000件）を超えます。取得期間を短くしてください。');
-    if(!M.valid(next))throw Error('取り込み後の予定を確認できません。期間を見直してください。');
-    return {board:next,ranges,affected,person,personName:board.people[person],range};
+    function check({date,start,end}){
+      if(!Number.isInteger(start)||!Number.isInteger(end))return '時刻は10:30の形式で入力してください。';
+      if(start<480||end>1440)return '時刻は08:00〜24:00の範囲で入力してください。';
+      if(start>=end)return '終了は開始より後にしてください。';
+      const day=midnight(date),from=day+start*MINUTE,to=day+end*MINUTE;
+      if(!M.validDate(date)||from<range.timeMin||to>range.timeMax)return '取得期間内の時刻を指定してください。';
+      if(overlaps(occupied,from,to))return 'Googleカレンダーの予定またはTOKIのMTGと重なっています。';
+      return '';
+    }
+    const capacity=2000-events.length,personName=board.people[person];
+    function build(draft=ranges){
+      if(draft.length>capacity)throw Error('予定の上限（全員合計2000件）を超えます。取得期間を短くしてください。');
+      const selected=draft.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start);
+      let previous;
+      for(const slot of selected){
+        const problem=check(slot);
+        if(problem)throw Error(problem);
+        if(previous?.date===slot.date&&previous.end>slot.start)throw Error('可能時間が重なっています。');
+        previous=slot;
+      }
+      const next=M.clone(board);
+      next.events=M.clone(events).concat(selected.map(({date,start,end})=>({id:makeId(),person,date,start,end,...(board.schemaVersion===4?{}:{title:'可能時間',detail:''})})));
+      if(!M.valid(next))throw Error('取り込み後の予定を確認できません。期間を見直してください。');
+      return {board:next,ranges:selected,affected,person,personName,range};
+    }
+    return {ranges,affected,person,personName,range,capacity,check,build};
   }
-  window.TokiCalendarImport={period,readBusy,availability,plan};
+  function plan(board,person,range,busy,makeId){return prepare(board,person,range,busy,makeId).build();}
+  window.TokiCalendarImport={period,readBusy,availability,clockMinutes,prepare,plan};
 })();
