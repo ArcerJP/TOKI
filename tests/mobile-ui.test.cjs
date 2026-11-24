@@ -199,6 +199,29 @@ test('double-click splits a band at the nearest interior half hour without chang
   await e.$('undo').onclick();assert.deepEqual(e.current(),before);
 });
 
+test('desktop footer actions follow the current account permissions and open existing roster forms',async t=>{
+  const visible=e=>[...e.$('chart').querySelectorAll('.bottom-add:not([hidden])')];
+  for(const [role,options,labels] of [
+    ['admin',{shared:true,scoped:true,admin:true},['場所・外部予定を追加','グループを追加','人を追加']],
+    ['member',{shared:true,scoped:true},['場所・外部予定を追加']],
+    ['guest',{shared:true,scoped:true,guest:true},[]],
+    ['local',{},['人を追加','グループを追加']]
+  ])await t.test(role,async t=>{
+    const e=await environment(t,{width:1440,...options});
+    assert.deepEqual(visible(e).map(button=>button.textContent),labels.map(label=>'＋ '+label));
+    for(const [index,button] of visible(e).entries()){
+      button.click();
+      assert.equal(e.$('roster-dialog').open,true);
+      assert.equal(e.$('roster-title').textContent,labels[index]);
+      e.$('cancel-roster').click();
+    }
+    if(role==='admin'){
+      await e.offline();
+      assert.ok(visible(e).every(button=>button.disabled));
+    }
+  });
+});
+
 test('members can edit their own and place times on mobile, while other people and MTGs are view-only',async t=>{
   const e=await environment(t,{shared:true,scoped:true});
   assert.equal(e.$('add-group').hidden,true);

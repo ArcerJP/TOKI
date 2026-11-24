@@ -124,7 +124,12 @@
     $("google-import-button").disabled=disabled||!canImport()||navigator.onLine===false;
     $("undo").disabled=disabled||!undo.length;$("redo").disabled=disabled||!redo.length;
     $("chart").querySelectorAll('.row-drag-handle').forEach(button=>button.disabled=disabled);
-    $("chart").querySelectorAll('.bottom-add').forEach(button=>button.disabled=disabled||!canAddPlace());
+    $("chart").querySelectorAll('.bottom-add').forEach(button=>{
+      const action=$(button.dataset.addAction);
+      button.hidden=action.hidden;
+      button.disabled=action.hidden||action.disabled;
+      button.textContent=action.textContent;
+    });
     if(ready&&shared.enabled&&!shared.online&&!busy)$("save-status").textContent='オフライン・閲覧のみ';
     googleImportUI?.refresh();
     meetingMenu?.refresh();
@@ -449,7 +454,17 @@
       row.append(nameCell,track);chart.append(row);
     });
     if(interactive&&!rows.length){const empty=el('p','group-view-empty','表示するグループがありません。「表示グループ」から選択してください。');chart.append(empty);}
-    if(interactive&&canManagePlaces()){const add=el('div','bottom-add-row'),button=el('button','bottom-add',access?'＋ 場所・外部予定を追加':'＋ 人を追加');button.type='button';button.onclick=()=>openRoster(access?'place':'person',null);add.append(button);chart.append(add);}
+    if(interactive&&canManagePlaces()){
+      const add=el('div','bottom-add-row'),actions=el('div','bottom-add-actions');
+      for(const id of ['add-person','add-group','add-manual-person']){
+        const button=el('button','bottom-add');
+        button.type='button';
+        button.dataset.addAction=id;
+        button.onclick=()=>$(id).click();
+        actions.append(button);
+      }
+      add.append(actions);chart.append(add);
+    }
     return chart;
   }
   function scheduleCount(){

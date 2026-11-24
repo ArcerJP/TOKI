@@ -31,7 +31,7 @@
 .company-code { overflow-wrap:anywhere; user-select:all; font-variant-numeric:tabular-nums; }
 .account-button, #mobile-app .account-button { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; min-width:44px; padding:8px; border-radius:50%; flex:none; }
 .account-icon { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; }
-#company-admin-controls { border:0; padding:0; margin:0; min-width:0; }
+#company-admin-controls { display:grid; gap:8px; border:0; padding:8px; margin:0; min-width:0; }
 .place-add-control { display:inline-flex; align-items:center; gap:4px; }
 .place-help { position:relative; color:#61766d; font-size:.875rem; }
 .place-help button { color:inherit; font-size:inherit; padding:0; min-width:32px; min-height:32px; border:0; background:transparent; }
@@ -82,3 +82,56 @@
   #company-dialog { --account-pad:12px; }
   #company-dialog .company-disclosure { padding-inline:5px; }
 }
+
+#company-dialog #company-admin {
+  padding:0;
+  border-color:#bbd3c9;
+  border-radius:10px;
+  background:#f3f8f5;
+}
+#company-admin > summary {
+  padding:11px 12px;
+  border-radius:9px;
+  background:var(--green);
+  color:#fff;
+  font-weight:700;
+}
+#company-admin-controls .company-disclosure { padding:0; }
+#company-admin-controls > .company-disclosure {
+  --branch-heading:#dbeee4;
+  --branch-subheading:#eff7f2;
+  --branch-accent:#45836a;
+  --branch-text:#254b3f;
+  margin:0;
+  border-inline-start:3px solid var(--branch-accent);
+  background:#fff;
+}
+#company-admin-controls > .company-invitation-section {
+  --branch-heading:#dfebf7;
+  --branch-subheading:#edf4fa;
+  --branch-accent:#577da2;
+  --branch-text:#294864;
+}
+#company-admin-controls .company-disclosure > summary {
+  padding:8px 10px;
+  border-radius:7px;
+  background:var(--branch-heading);
+  color:var(--branch-text);
+}
+#company-admin-controls > .company-disclosure > .company-disclosure { margin:6px; }
+#company-admin-controls > .company-disclosure > .company-disclosure > summary {
+  padding:7px 8px;
+  background:var(--branch-subheading);
+}
+#company-admin-controls > .company-disclosure > .company-disclosure[open] { padding-bottom:6px; }
+#company-admin-controls > .company-disclosure > .company-disclosure > :not(summary) { margin-inline:8px; }
+#company-admin details[open] > summary, #company-admin[open] > summary {
+  border-end-start-radius:0;
+  border-end-end-radius:0;
+}
+#company-admin-controls :is(.company-series,.company-invitation-choices > details) {
+  border-inline-start:2px solid var(--branch-accent);
+  padding-inline-start:8px;
+}
+#company-admin summary:hover { filter:brightness(.96); }
+#company-admin summary:focus-visible { outline:2px solid #236d63; outline-offset:2px; }
