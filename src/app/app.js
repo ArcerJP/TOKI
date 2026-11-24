@@ -762,8 +762,8 @@
     canImportPerson:person=>!isPlace(person)&&canEditPerson(person),
     apply:async(plan,fingerprint)=>{
       if(pendingBoard||pendingLocalBoard||JSON.stringify(snapshot())!==fingerprint)throw Error('予定表が更新されています。画面を閉じ、最新の予定を確認してから再取得してください。');
-      if(await commit(plan.board,'Googleカレンダーの空き時間を可能時間として反映しました')){selected=plan.range.first;render();return true;}
-      return false;
+      if(!await commit(plan.board,'Googleカレンダーの空き時間を可能時間として反映しました'))throw Error(lastSaveError||'保存できませんでした。接続と最新の予定を確認して、もう一度お試しください。');
+      selected=plan.range.first;render();return true;
     }
   });
   groupView=window.TokiGroupView({context:()=>({scope:viewScope(),board:snapshot(),ready,showAll:Boolean(shared.guest),prompt:mobile?.shouldPromptGroups}),change:render});

@@ -122,6 +122,8 @@ html[data-ui="compact"] dialog .dialog-actions { flex-wrap: wrap; gap: 8px; }
 html[data-ui="compact"] dialog textarea { white-space: pre-wrap; overflow-wrap: anywhere; }
 html[data-ui="compact"] #export-dialog, html[data-ui="compact"] #meeting-export-dialog, html[data-ui="compact"] #google-import-dialog { width: 100%; max-width: 760px; height: 100dvh; max-height: 100dvh; margin: auto; border-radius: 0; padding-top: max(16px,env(safe-area-inset-top)); padding-bottom: max(16px,env(safe-area-inset-bottom)); }
 html[data-ui="compact"] #export-dialog .dialog-heading, html[data-ui="compact"] #meeting-export-dialog .dialog-heading, html[data-ui="compact"] #google-import-dialog .dialog-heading { position: sticky; top: -16px; background: white; padding: 8px 0; z-index: 2; }
+html[data-ui="compact"] #google-import-preview-title { scroll-margin-top: 56px; }
+html[data-ui="compact"] #google-login-status { overflow-wrap: anywhere; }
 html[data-ui="compact"] #export-dialog .dialog-actions, html[data-ui="compact"] #meeting-export-dialog .dialog-actions { position: sticky; bottom: -16px; background: white; padding: 12px 0; z-index: 2; }
 html[data-ui="compact"] .toast { bottom: calc(84px + env(safe-area-inset-bottom)); max-width: calc(100vw - 32px); z-index: 100; }
 .mob-dialog { color: #193c34; }

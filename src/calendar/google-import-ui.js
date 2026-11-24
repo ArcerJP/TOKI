@@ -4,7 +4,10 @@ window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true
   const dialog=$('google-import-dialog'),inputs=['google-import-person','google-time-min','google-time-max'];
   let loading=false,sdkReady=false,preview=null,base=null,operation=0,request=null;
   let calendars=[],chosen=new Set(),listReady=false;
-  const error=message=>{$('google-import-error').textContent=message;};
+  function error(message){
+    const alert=$('google-import-error');alert.textContent=message;
+    if(message)alert.scrollIntoView?.({block:'nearest'});
+  }
   const invalidate=()=>{preview=null;$('google-import-preview').hidden=true;};
   function controls(){
     $('google-login').disabled=loading||(!linkGuest&&(!sdkReady||!api.configured));
@@ -20,7 +23,11 @@ window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true
     $('google-calendars-all').checked=calendars.length>0&&chosen.size===calendars.length;
     $('google-calendars-all').indeterminate=chosen.size>0&&chosen.size<calendars.length;
     $('google-calendar-count').textContent=listReady?`${chosen.size} / ${calendars.length}件を選択`:'一覧を取得してください';
-    if(!loading)$('google-login-status').textContent=api.connected?'Google連携済み':'未ログイン';
+    if(!loading){
+      const primary=calendars.find(calendar=>calendar.primary)?.id;
+      const email=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(primary??'')?primary:null;
+      $('google-login-status').textContent=api.connected?(email?`${email} 連携済み`:'Google連携済み'):'未ログイン';
+    }
   }
   function resetCalendars(){calendars=[];chosen=new Set();listReady=false;$('google-calendar-list').replaceChildren();}
   async function loadCalendars(sequence){
@@ -96,18 +103,27 @@ window.TokiGoogleImportUI=({context,apply,today,canOpen,canImportPerson=()=>true
       tr.append(day,slots);rows.append(tr);
     }
     $('google-import-preview').hidden=false;
+    const heading=$('google-import-preview-title');
+    heading.focus({preventScroll:true});heading.scrollIntoView?.({block:'start'});
   }
   $('google-preview-button').onclick=async()=>{
     error('');invalidate();const sequence=++operation;
     try{
-      current();const range=model.period($('google-time-min').value+'T00:00',$('google-time-max').value+'T00:00'),person=Number($('google-import-person').value);
+      current();
+      const start=$('google-time-min').value,end=$('google-time-max').value,person=Number($('google-import-person').value);
+      if(!start||!end)throw Error('取得開始日と取得終了日を入力してください。');
+      const range=model.period(start+'T00:00',end+'T00:00');
       if(!$('google-import-person').value||!canImportPerson(person))throw Error('取り込み先の人を確認してください。');
       if(!listReady||!chosen.size)throw Error('取り込むカレンダーを1つ以上選択してください。');
       const calendarIds=calendars.filter(c=>chosen.has(c.id)).map(c=>c.id);
       loading=true;controls();$('google-login-status').textContent='予定ありの時間帯を取得中…';request=new AbortController();
       const busy=await api.fetchBusy(range,calendarIds,request.signal);if(sequence!==operation)return;
       const state=current();preview={plan:model.plan(state.board,person,range,busy),fingerprint:state.fingerprint,calendarCount:calendarIds.length};renderPreview();
-    }catch(failure){if(sequence===operation)error(failure.message);}
+    }catch(failure){
+      if(sequence!==operation)return;
+      const unavailable=calendars.filter(calendar=>failure.calendarIds?.includes(calendar.id)).map(calendar=>calendar.name);
+      error(unavailable.length?`取得できなかったカレンダー「${unavailable.join('」「')}」。Google側の閲覧権限を確認するか、該当するチェックを外して再度取り込んでください。`:failure.message);
+    }
     finally{if(sequence===operation){loading=false;request=null;controls();}}
   };
   $('google-apply-button').onclick=async()=>{

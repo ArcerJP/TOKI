@@ -29,16 +29,18 @@
     if(!response||timestamp(response.timeMin)!==range.timeMin||timestamp(response.timeMax)!==range.timeMax)throw Error('取得期間を確認できませんでした。もう一度取得してください。');
     // Require a complete response for exactly the selected IDs. Partial success is unsafe.
     const calendars=response.calendars;
-    if(!Array.isArray(calendarIds)||!calendarIds.length||new Set(calendarIds).size!==calendarIds.length||!calendars||Array.isArray(calendars)||typeof calendars!=='object'||Object.keys(calendars).length!==calendarIds.length)throw Error('選択したカレンダーすべての応答を確認できませんでした。もう一度取得してください。');
-    return calendarIds.flatMap(id=>{
+    if(!Array.isArray(calendarIds)||!calendarIds.length||new Set(calendarIds).size!==calendarIds.length||!calendars||Array.isArray(calendars)||typeof calendars!=='object')throw Error('選択したカレンダーすべての応答を確認できませんでした。もう一度取得してください。');
+    const unavailable=calendarIds.filter(id=>{
       const calendar=Object.hasOwn(calendars,id)?calendars[id]:null;
-      if(!calendar||calendar.errors!==undefined&&(!Array.isArray(calendar.errors)||calendar.errors.length)||!Array.isArray(calendar.busy))throw Error('選択したカレンダーの一部を取得できませんでした。閲覧権限を確認するか、対象カレンダーを選び直してください。');
-      return calendar.busy.map(interval=>{
-        const start=timestamp(interval?.start),end=timestamp(interval?.end);
-        if(end<=start)throw Error('Googleから取得した時間帯が正しくありません。');
-        return {start,end};
-      });
+      return !calendar||calendar.errors!==undefined&&(!Array.isArray(calendar.errors)||calendar.errors.length)||!Array.isArray(calendar.busy);
     });
+    if(unavailable.length)throw Object.assign(Error('選択したカレンダーの一部を取得できませんでした。閲覧権限を確認するか、対象カレンダーを選び直してください。'),{calendarIds:unavailable});
+    if(Object.keys(calendars).length!==calendarIds.length)throw Error('選択したカレンダーの応答を確認できませんでした。もう一度取得してください。');
+    return calendarIds.flatMap(id=>calendars[id].busy.map(interval=>{
+      const start=timestamp(interval?.start),end=timestamp(interval?.end);
+      if(end<=start)throw Error('Googleから取得した時間帯が正しくありません。');
+      return {start,end};
+    }));
   }
   function availability(range,busy){
     if(!Array.isArray(busy)||busy.some(b=>!Number.isFinite(b.start)||!Number.isFinite(b.end)||b.end<=b.start))throw Error('予定の時間帯が正しくありません。');

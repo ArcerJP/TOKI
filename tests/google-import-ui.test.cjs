@@ -10,7 +10,7 @@ async function environment(t){
   w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
   for(const file of ['model.js','availability.js','calendar-import.js'])w.eval(fs.readFileSync(sourcePath(file),'utf8'));
   let connected=false,fingerprint='original',listHandler,busyHandler,loginFailure=false;
-  const items=[{id:'mine',name:'個人',primary:true},{id:'shared',name:'共有カレンダー'},{id:'text',name:'<img src=x onerror=alert(1)>'}],fetches=[],saves=[];
+  const items=[{id:'owner@example.test',name:'個人',primary:true},{id:'shared',name:'共有カレンダー'},{id:'text',name:'<img src=x onerror=alert(1)>'}],fetches=[],saves=[];
   const board={schemaVersion:4,people:['A','B'],groups:[],events:[],meetings:[]};
   w.TokiGoogleCalendar={configured:true,get connected(){return connected;},load:async()=>{},login:async()=>{connected=false;if(loginFailure)throw Error('権限不足');connected=true;},logout:()=>{connected=false;},listCalendars:async signal=>listHandler?listHandler(signal):items,fetchBusy:async(range,ids,signal)=>{fetches.push({range,ids:[...ids],signal});if(busyHandler)return busyHandler(range,ids,signal);return ids.includes('shared')?[{start:Date.parse('2026-10-05T11:10:00+09:00'),end:Date.parse('2026-10-05T11:50:00+09:00')}]:[];}};
   w.eval(fs.readFileSync(sourcePath('google-import-ui.js'),'utf8'));
@@ -32,9 +32,10 @@ test('calendar selection starts with all checked and names remain plain text',as
 
 test('selected-calendar busy time affects preview, selection changes invalidate it, save requires explicit action',async t=>{
   const e=await environment(t);await e.open();e.setRange();await e.click('google-preview-button');
-  assert.deepEqual(e.fetches[0].ids,['mine','shared','text']);assert.match(e.$('google-import-rows').textContent,/08:00〜11:00、12:00〜24:00/);assert.equal(e.saves.length,0);
+  assert.deepEqual(e.fetches[0].ids,['owner@example.test','shared','text']);assert.match(e.$('google-import-rows').textContent,/08:00〜11:00、12:00〜24:00/);assert.equal(e.saves.length,0);
+  assert.equal(e.d.activeElement,e.$('google-import-preview-title'));
   e.inputs()[1].click();assert.equal(e.$('google-import-preview').hidden,true);assert.equal(e.$('google-apply-button').disabled,true);
-  await e.click('google-preview-button');assert.deepEqual(e.fetches[1].ids,['mine','text']);assert.match(e.$('google-import-rows').textContent,/08:00〜24:00/);assert.match(e.$('google-import-summary').textContent,/2件のカレンダー/);
+  await e.click('google-preview-button');assert.deepEqual(e.fetches[1].ids,['owner@example.test','text']);assert.match(e.$('google-import-rows').textContent,/08:00〜24:00/);assert.match(e.$('google-import-summary').textContent,/2件のカレンダー/);
   await e.click('google-apply-button');assert.equal(e.saves.length,1);assert.equal(e.$('google-import-dialog').open,false);
 });
 
@@ -58,9 +59,29 @@ test('busy retrieval failure and concurrent board updates cannot produce a savab
 });
 
 test('changing the Google account or logging out clears prior calendar IDs and preview',async t=>{
-  const e=await environment(t);await e.open();e.setRange();await e.click('google-preview-button');e.setList(()=>[{id:'other',name:'別アカウント'}]);await e.click('google-login');
-  assert.deepEqual(e.inputs().map(c=>c.value),['other']);assert.equal(e.$('google-import-preview').hidden,true);await e.click('google-logout');assert.equal(e.inputs().length,0);assert.equal(e.$('google-preview-button').disabled,true);
+  const e=await environment(t);await e.open();assert.equal(e.$('google-login-status').textContent,'owner@example.test 連携済み');
+  e.setRange();await e.click('google-preview-button');e.setList(()=>[{id:'other@example.test',name:'別アカウント',primary:true}]);await e.click('google-login');
+  assert.deepEqual(e.inputs().map(c=>c.value),['other@example.test']);assert.equal(e.$('google-login-status').textContent,'other@example.test 連携済み');
+  assert.equal(e.$('google-import-preview').hidden,true);await e.click('google-logout');assert.equal(e.$('google-login-status').textContent,'未ログイン');assert.equal(e.inputs().length,0);assert.equal(e.$('google-preview-button').disabled,true);
   e.failLogin();await e.click('google-login');assert.equal(e.inputs().length,0);assert.equal(e.$('google-calendars').hidden,true);
+});
+
+test('date inputs accept consecutive days and can step across month boundaries',async t=>{
+  const e=await environment(t);await e.open();
+  assert.equal(e.$('google-time-min').value,'2026-10-05');assert.equal(e.$('google-time-max').value,'2026-10-12');
+  e.input('google-time-min','2026-11-30');e.input('google-time-max','2026-11-30');
+  e.$('google-time-max').stepUp();assert.equal(e.$('google-time-max').value,'2026-12-01');
+  assert.ok(e.$('google-time-min').checkValidity()&&e.$('google-time-max').checkValidity());
+  await e.click('google-preview-button');assert.equal(e.fetches[0].range.first,'2026-11-30');assert.equal(e.fetches[0].range.last,'2026-11-30');
+});
+
+test('an unavailable selected calendar is named and the other calendars can be retried safely',async t=>{
+  const e=await environment(t);await e.open();e.setRange();
+  e.setBusy((range,ids)=>e.w.TokiCalendarImport.readBusy({timeMin:range.start,timeMax:range.end,calendars:Object.fromEntries(ids.filter(id=>id!=='shared').map(id=>[id,{busy:[]}]))},range,ids));
+  await e.click('google-preview-button');assert.match(e.$('google-import-error').textContent,/取得できなかったカレンダー「共有カレンダー」/);
+  assert.equal(e.$('google-apply-button').disabled,true);assert.equal(e.saves.length,0);
+  e.inputs()[1].click();await e.click('google-preview-button');assert.equal(e.$('google-import-preview').hidden,false);
+  await e.click('google-apply-button');assert.equal(e.saves.length,1);
 });
 
 test('editing the person or requested period invalidates old preview before saving',async t=>{

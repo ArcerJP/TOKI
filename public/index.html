@@ -552,7 +552,6 @@
           ><input
             id="google-time-min"
             type="date"
-            step="60"
             required
           />
         </div>
@@ -561,13 +560,12 @@
           ><input
             id="google-time-max"
             type="date"
-            step="60"
             required
           />
         </div>
       </div>
       <p class="import-help">
-        日本時間・最大366日。可能時間を入れる範囲は毎日8:00〜24:00です。終了時刻は含みません。
+        日本時間・最大366日。終了日の前日までを取り込みます。可能時間を入れる範囲は毎日8:00〜24:00です。
       </p>
       <details class="import-details">
         <summary>取り込みルール・データの扱い</summary>
@@ -611,15 +609,16 @@
         </fieldset>
       </section>
       <button type="button" id="google-preview-button" class="primary" disabled>
-        空き時間を確認
+        空き時間を取り込み
       </button>
+      <p class="import-help">取り込み内容を確認してから、予定表に反映します。</p>
       <p id="google-import-error" class="error" role="alert"></p>
       <section
         id="google-import-preview"
         hidden
-        aria-label="取り込み内容の確認"
+        aria-labelledby="google-import-preview-title"
       >
-        <h3>反映する可能時間</h3>
+        <h3 id="google-import-preview-title" tabindex="-1">反映する可能時間</h3>
         <p id="google-import-summary"></p>
         <div class="import-preview-scroll">
           <table class="import-preview-table">
