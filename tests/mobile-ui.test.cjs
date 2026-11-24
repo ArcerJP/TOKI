@@ -46,6 +46,22 @@ async function environment(t,{width=390,coarse=false,shared=false,preselect=true
   return {w,d,$,click,button,copies,current,get saves(){return saves;},get error(){return d.querySelector('.mob-error')?.textContent;},async resetAccount(){hooks.reset();await flush();},async switchScope(scope){hooks.reset();w.TokiShared.scope=scope;hooks.board({version,payload:board});await flush();},async resize(newWidth,newCoarse=coarse){width=newWidth;coarse=newCoarse;media.forEach(entry=>{entry.matches=entry.media.includes('767')?width<=767:width<=1023&&coarse;entry.listeners.forEach(fn=>fn());});await flush();},async offline(value=true){online=!value;hooks.state({online,fetchedAt:Date.now()});await flush();},async remoteUpdate(){board=structuredClone(board);board.people[0]='A更新';hooks.board({version:++version,payload:board});await flush();},async localUpdate(){const value=structuredClone(current());value.people[0]='A更新';const text=JSON.stringify({version:3,board:value});w.localStorage.setItem('toki-availability-v3',text);w.dispatchEvent(new w.StorageEvent('storage',{key:'toki-availability-v3',newValue:text}));await flush();},fail(){failSave=true;}};
 }
 
+async function openMobileGroupForm(e){
+  e.$('mobile-app').querySelector('.mob-brand .toolbar-menu summary').click();
+  await e.click('＋ グループを追加');
+}
+
+test('the mobile account screen has no separate members and places page',async t=>{
+  const e=await environment(t,{shared:true,scoped:true,admin:true});
+  const before=structuredClone(e.current());
+  await e.click('アカウント');
+  assert.equal(e.$('mobile-app').querySelector('button[aria-label="メンバー"]'),null);
+  assert.doesNotMatch(e.$('mobile-app').textContent,/メンバーと場所/);
+  assert.match(e.$('mobile-app').textContent,/スマホの操作/);
+  assert.deepEqual(e.current(),before);
+  assert.equal(e.saves,0);
+});
+
 test('guest starts with granted groups visible and cannot edit a shared place',async t=>{
   const e=await environment(t,{shared:true,scoped:true,guest:true,preselect:false});
   assert.equal(e.$('group-view-dialog').open,false);
@@ -272,7 +288,7 @@ test('company changes start with their own empty selection; returning restores o
 for(const width of [1440,390])for(const shared of [false,true])test(`created groups become visible and preserve other choices (${width}px, ${shared?'shared':'local'})`,async t=>{
   const e=await environment(t,{width,shared,preselect:false});
   e.$('group-view-choices').querySelector('[data-group="b"]').click();await e.click('適用');
-  if(width<768){await e.click('アカウント');await e.click('メンバー');await e.click('＋ グループ');}else e.$('add-group').click();
+  if(width<768)await openMobileGroupForm(e);else e.$('add-group').click();
   e.$('roster-name').value='作成したグループ';e.$('membership-options').querySelector('input[value="0"]').checked=true;
   await e.$('roster-form').onsubmit({preventDefault(){}});await flush();
   const created=e.current().groups.find(g=>g.name==='作成したグループ');assert.ok(created);assert.equal(e.$('roster-dialog').open,false);
@@ -311,15 +327,17 @@ test('a group created on this device is selected when it appears after administr
   assert.match(e.$('chart').textContent,/レビュー後に表示/);
 });
 
-test('failed group creation and editing a hidden group do not change display choices',async t=>{
-  const e=await environment(t,{shared:true,preselect:false});await e.click('適用');
+test('failed group creation and editing through the mobile table preserve display choices',async t=>{
+  const e=await environment(t,{shared:true,preselect:false});
+  e.$('group-view-choices').querySelector('[data-group="a"]').click();await e.click('適用');
   const key='toki-view-v1:shared:groups',before=e.w.localStorage.getItem(key);
-  await e.click('アカウント');await e.click('メンバー');await e.click('局Aの設定を編集');e.$('roster-name').value='編集後の局A';
+  await e.click('局Aを編集・削除');e.$('roster-name').value='編集後の局A';
   await e.$('roster-form').onsubmit({preventDefault(){}});assert.equal(e.w.localStorage.getItem(key),before);
-  await e.click('＋ グループ');e.$('roster-name').value='保存失敗グループ';e.fail();
+  await openMobileGroupForm(e);e.$('roster-name').value='保存失敗グループ';e.fail();
   await e.$('roster-form').onsubmit({preventDefault(){}});assert.equal(e.$('roster-dialog').open,true);assert.match(e.$('roster-error').textContent,/保存失敗/);
   assert.equal(e.current().groups.some(g=>g.name==='保存失敗グループ'),false);assert.equal(e.w.localStorage.getItem(key),before);
-  e.$('cancel-roster').click();await e.click('予定管理');assert.equal(e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name').length,0);
+  e.$('cancel-roster').click();await e.click('予定管理');
+  assert.deepEqual([...e.$('mobile-app').querySelectorAll('.mob-group-tr .mob-table-name')].map(row=>row.textContent),['編集後の局A']);
 });
 
 test('groups received from another device remain hidden until explicitly selected',async t=>{

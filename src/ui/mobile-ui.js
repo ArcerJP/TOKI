@@ -180,11 +180,7 @@ window.TokiMobileUI = function (bridge) {
       tools.append(el('span','mob-member-count',bridge.scheduleCount()),button(`▾ 表示グループ ${board.groups.filter(g=>!hidden.has(g.id)).length}/${board.groups.length}`,bridge.openGroupView,'表示グループを選択'),bulk);
       header.append(tools);
       renderTable(board,ctx.date);
-    }else if(page==='members'){
-      content.append(button('‹ アカウントへ戻る',()=>{page='more';render();}));
-      renderMembers(board);
-    }
-    else if(page==='export'){
+    }else if(page==='export'){
       content.append(el('h1',null,'書き出し'),el('p','mob-muted','対象と期間を選んでコピーできます。'));
       actionCard('可能時間書き出し','人・グループの可能時間をコピー','export-availability');
       actionCard('MTG一括書き出し','対象グループとMTG参加者ごとにコピー','export-meetings');
@@ -192,17 +188,13 @@ window.TokiMobileUI = function (bridge) {
       content.append(el('p','mob-note','表示グループのチェックは書き出しに影響しません。MTG書き出しは全グループが初期選択されます。'));
     }else{
       content.append(el('h1',null,'アカウント'));
-      if(bridge.canManagePlaces()){
-        const members=button('',()=>switchPage('members'),'メンバー','mob-action-card');
-        members.append(el('strong',null,'メンバーと場所'),el('span','mob-chevron','›'));content.append(members);
-      }
       if(!$('company-button').hidden)actionCard('組織・アカウント','組織の切り替え・ログアウト・参加者の管理','company-button');
       if(!$('pwa-status').hidden)content.append(el('p','mob-note',$('pwa-status').textContent));
       const help=el('section','mob-card');help.append(el('h2',null,'💡 スマホの操作'));
       const list=el('ul');for(const text of ['予定入力は空き枠をタップするか、長押ししてその場で離すと30分追加できます。長押ししてから指を動かすと範囲を指定できます。','帯の中央を長押しして同じ日の中で移動。月間の予定入力では、別日にドラッグするとコピーします。両端を長押しして開始・終了を調整できます。','帯をタップすると時間調整やコピーなどの操作メニューが開きます。','スワイプでスクロール、2本指で拡大・縮小。','予定の表ではグループ名の横の矢印で折りたためます。','オフラインの共有予定は閲覧のみです。'])list.append(el('li',null,text));help.append(list);content.append(help);
     }
     nav.replaceChildren();for(const [id,name] of [['entry','予定入力'],['schedule','予定管理'],['export','書き出し'],['more','アカウント']]){
-      const b=button('',()=>switchPage(id),name);b.append(navIcon(id),el('span',null,name));b.setAttribute('aria-current',id===(page==='members'?'more':page)?'page':'false');nav.append(b);
+      const b=button('',()=>switchPage(id),name);b.append(navIcon(id),el('span',null,name));b.setAttribute('aria-current',id===page?'page':'false');nav.append(b);
     }
     if(active)Array.from(root.querySelectorAll('button')).find(b=>b.getAttribute('aria-label')===active)?.focus({preventScroll:true});
     if(page==='schedule'){tableScroll.scrollLeft=tablePosition[0];tableScroll.scrollTop=tablePosition[1];}
@@ -309,7 +301,7 @@ window.TokiMobileUI = function (bridge) {
     return bar;
   }
   function renderTable(board,date){
-    const head=el('div','mob-rowhead mob-table-tools');head.append(button(full?'⛶ 全画面終了':'⛶ 全画面表示',()=>{full=!full;root.classList.toggle('mob-full',full);render();}));content.append(head);
+    const head=el('div','mob-table-tools');head.append(button(full?'⛶ 全画面終了':'⛶ 全画面表示',()=>{full=!full;root.classList.toggle('mob-full',full);render();}));content.append(head);
     const table=el('table','mob-table'),thead=el('thead'),tr=el('tr');table.setAttribute('aria-label',dayText(date)+'の比較表');
     tr.append(el('th',null,'名前'));const day=el('th',null,dayText(date));day.colSpan=32;tr.append(day);thead.append(tr);const times=el('tr');times.append(el('th',null,'可能時間'));
     for(let m=480;m<1440;m+=30)times.append(el('th',null,A.time(m)));thead.append(times);table.append(thead);const tbody=el('tbody');
@@ -371,41 +363,6 @@ window.TokiMobileUI = function (bridge) {
     const bottom=el('div','bottom-add-row mob-reorder-end','未所属・表の末尾へ');
     table.append(tbody);tableScroll.replaceChildren(table,bottom);content.append(tableScroll);
   }
-  function renderMembers(board){
-    content.append(el('h1',null,'メンバーと場所'));const add=el('div','mob-actions');
-    if(bridge.scoped()){
-      const control=el('span','place-add-control'),create=mutationButton('＋ 場所・外部予定を追加',()=>bridge.openRoster('place',null));
-      create.disabled||=!bridge.canAddPlace();
-      const help=el('span','place-help'),toggle=button('ⓘ',()=>toggle.setAttribute('aria-expanded',String(toggle.getAttribute('aria-expanded')!=='true')),'場所・外部予定の説明');
-      toggle.setAttribute('aria-controls','mobile-place-help-text');toggle.setAttribute('aria-expanded','false');
-      const description=el('span','place-help-text',$('place-help-text').textContent);description.id='mobile-place-help-text';
-      help.append(toggle,description);control.append(create,help);add.append(control);
-    }else add.append(mutationButton('＋ 人を追加',()=>bridge.openRoster('person',null)));
-    if(bridge.canManage())add.append(mutationButton('＋ グループ',()=>bridge.openRoster('group',null)));
-    content.append(add);
-    if(!bridge.canManage()){
-      if(!board.groups.length)content.append(el('p','mob-note','場所・外部予定を追加するには、管理者にグループの閲覧権限を依頼してください。'));
-      for(const group of board.groups){
-        const places=group.members.filter(bridge.isPlace);if(!places.length)continue;
-        const card=el('section','mob-card');card.append(el('h2',null,group.name));
-        for(const person of places)card.append(mutationButton(board.people[person],()=>bridge.openRoster('place',person,group.id),board.people[person]+'の設定を開く'));
-        content.append(card);
-      }
-      return;
-    }
-    content.append(el('p','mob-note','名前・所属は「編集」。↑↓で並べ替えできます。ここでは非表示のグループも表示します。'));
-    for(const [index,g] of board.groups.entries()){
-      const card=el('section','mob-card'),head=el('div','mob-rowhead');head.append(el('h2',null,g.name),mutationButton('編集',()=>bridge.openRoster('group',g.id),g.name+'の設定を編集'));card.append(head);
-      const controls=el('div','mob-actions');for(const [delta,text] of [[-1,'↑'],[1,'↓']]){const b=mutationButton(text,()=>reorder(board,()=>M.reorderGroup(board,g.id,board.groups[index+delta].id,delta>0)),g.name+(delta<0?'を上へ':'を下へ'));b.disabled||=index+delta<0||index+delta>=board.groups.length;controls.append(b);}card.append(controls);
-      for(const [i,p] of g.members.entries()){
-        const row=el('div','mob-member-setting');row.append(el('span',null,board.people[p]),mutationButton('編集',()=>bridge.openRoster(bridge.isPlace(p)?'place':'person',p,g.id),board.people[p]+'の名前・所属を編集'));
-        for(const [delta,text] of [[-1,'↑'],[1,'↓']]){const b=mutationButton(text,()=>reorder(board,()=>M.placePerson(board,p,{group:g.id,target:g.members[i+delta],after:delta>0})),board.people[p]+(delta<0?'を上へ':'を下へ'));b.disabled||=i+delta<0||i+delta>=g.members.length;row.append(b);}card.append(row);
-      }content.append(card);
-    }
-    const people=M.rows(board).filter(r=>r.person!==undefined&&!r.context);if(people.length){const card=el('section','mob-card');card.append(el('h2',null,'未所属'));for(const [index,row] of people.entries()){const line=el('div','mob-member-setting');line.append(el('span',null,row.name),mutationButton('編集',()=>bridge.openRoster(bridge.isPlace(row.person)?'place':'person',row.person),row.name+'の名前・所属を編集'));for(const [delta,text] of [[-1,'↑'],[1,'↓']]){const b=mutationButton(text,()=>reorder(board,()=>M.reorderPeople(board,row.person,people[index+delta].person,delta>0)),row.name+(delta<0?'を上へ':'を下へ'));b.disabled||=index+delta<0||index+delta>=people.length;line.append(b);}card.append(line);}content.append(card);}
-    if(!bridge.scoped())content.append(mutationButton('＋ 人を追加',()=>bridge.openRoster('person',null),'一覧の末尾から人を追加'));
-  }
-  async function reorder(board,make){try{await bridge.commit(make(),'並び順を変更しました',JSON.stringify(board));}catch(e){bridge.notify(e.message);}}
   async function copy(text,parent){try{await navigator.clipboard.writeText(text);bridge.notify('時間をコピーしました');}catch{const area=el('textarea');area.readOnly=true;area.value=text;area.setAttribute('aria-label','コピーする時間');parent.append(el('p','mob-note','コピーできない場合は、次の文字を選択してコピーしてください。'),area);area.focus();area.select();}}
   function createMeeting(group,range,date){
     const ctx=bridge.context();

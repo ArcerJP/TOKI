@@ -777,7 +777,7 @@
     context:entryContext,
     interacting:()=>Boolean(drag||rowDrag?.active||desktopMonth?.interacting),
     selectDate,today,openDatePicker,openDuplicatePicker,canDuplicate,canAdjustTime,canSaveTime,adjustTime:adjustMenuTime,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
-    scoped:()=>Boolean(access),canManage,canEditRow,canAddPlace,canManagePlaces,ownPerson,linkedPerson,isPlace,
+    canManage,canEditRow,ownPerson,linkedPerson,isPlace,
     memberMeetingsEnabled,canScheduleMeeting,canEditMeeting,
     canInspectPersonAccess,canOpenRoster,
     personAccess:companyUI.personAccess,personAccessChoices:companyUI.personAccessChoices,

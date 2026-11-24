@@ -19,8 +19,6 @@
 #mobile-app .mob-viewbar > button { font-size: 12px; padding-inline: 8px; }
 #mobile-app .mob-content { padding: 12px; max-width: 760px; margin: auto; }
 #mobile-app .mob-card { border: 1px solid #dde8e2; background: #fff; border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 2px 4px #25463804; }
-#mobile-app .mob-rowhead { display: flex; align-items: center; gap: 6px; }
-#mobile-app .mob-rowhead h2, #mobile-app .mob-rowhead h3 { flex: 1; min-width: 0; }
 #mobile-app .mob-excluded { text-decoration: line-through; color: #7d817e; }
 #mobile-app .mob-nav { display: grid; grid-template-columns: repeat(4,1fr); position: fixed; bottom: 0; left: 0; right: 0; padding: 4px max(8px,env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left)); z-index: 10; border-top: 1px solid #dbe7e1; background: #fff; }
 #mobile-app .mob-nav button { display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 11px; color: #748077; padding: 4px; }
@@ -65,11 +63,6 @@
 #mobile-app .mob-note, .mob-dialog .mob-note { color: #63766c; font-size: 12px; line-height: 1.7; }
 #mobile-app .mob-notice { color: #815914; font-size: 12px; background: #fff4d9; padding: 8px; border-radius: 6px; }
 #mobile-app .mob-muted { color: #607167; font-size: 13px; }
-#mobile-app .mob-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-#mobile-app .mob-actions button { background: #edf3ef; }
-#mobile-app .mob-member-setting { display: flex; align-items: center; gap: 2px; border-top: 1px solid #edf1ee; padding: 4px 0; }
-#mobile-app .mob-member-setting > span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
-#mobile-app .mob-member-setting button { padding-inline: 8px; font-size: 12px; }
 #mobile-app .mob-action-card { width: 100%; display: grid; grid-template-columns: 1fr 24px; text-align: left; gap: 5px 8px; padding: 18px 16px; background: #fff; border: 1px solid #dde8e2; margin-bottom: 12px; border-radius: 14px; }
 #mobile-app .mob-action-card strong { font-size: 15px; }
 #mobile-app .mob-action-card .mob-muted { grid-column: 1; font-weight: 400; }
@@ -77,7 +70,7 @@
 #mobile-app .mob-card ul { padding-left: 20px; font-size: 13px; }
 #mobile-app .mob-card li { margin: 10px 0; }
 #mobile-app .mob-table-scroll { --table-slot: 44px; --table-row: 48px; --table-name: 128px; --table-lane: calc(var(--table-row) - 10px); overflow: auto; max-height: calc(100dvh - 294px); border: 1px solid #dbe7e1; border-radius: 10px; background: #fff; touch-action: pan-x pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-#mobile-app .mob-table-tools { justify-content: flex-end; }
+#mobile-app .mob-table-tools { display: flex; align-items: center; justify-content: flex-end; }
 #mobile-app .mob-table { width: calc(var(--table-name) + 32 * var(--table-slot)); border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 11px; }
 #mobile-app .mob-table thead { position: sticky; top: 0; z-index: 4; }
 #mobile-app .mob-table th { background: #f2f7f4; font-weight: 500; }
