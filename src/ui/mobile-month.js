@@ -181,10 +181,10 @@ window.TokiMobileMonth = function (bridge) {
     const active=gesture;if(!active)return false;
     update(point);stop();
     if(active.phase==='held'&&active.moved){const {track,to}=moveTo(active);if(track)void save(active,track,to);}
-    else if(active.phase==='pending'){
-      if(active.item)openBand(active.item,active.track.dataset.date);
-      else{const start=firstSlot(active.origin);void save(active,active.track,{start,end:start+30});}
-    }
+    else if(!active.item&&(active.phase==='pending'||active.phase==='held')){
+      const start=firstSlot(active.origin);
+      void save(active,active.track,{start,end:start+30});
+    }else if(active.phase==='pending')openBand(active.item,active.track.dataset.date);
     bridge.settled();
     return active.phase!=='scroll';
   }

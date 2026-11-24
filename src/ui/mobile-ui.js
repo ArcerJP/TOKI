@@ -15,7 +15,7 @@ window.TokiMobileUI = function (bridge) {
   const storage={get(key,fallback){try{return JSON.parse(localStorage.getItem('toki-view-v1:'+scope()+':'+key))??fallback;}catch{return fallback;}},set(key,value){try{localStorage.setItem('toki-view-v1:'+scope()+':'+key,JSON.stringify(value));}catch{}}};
   let hidden=new Set(),folded=new Set(),entryTarget=null;
   let page='entry',compact=false,full=false;
-  let draft=null,gesture=null,refreshFrame=0,lastFocus=null,editorNodes=null,lastRender='',lastScope='';
+  let draft=null,gesture=null,timeAdjustment=null,refreshFrame=0,lastFocus=null,editorNodes=null,lastRender='',lastScope='';
   const root=$('mobile-app'),header=el('div','mob-header'),content=el('div','mob-content'),nav=el('nav','mob-nav');
   const month=window.TokiMobileMonth({...bridge,openEditor,openMeeting:openMeetingActions,openAvailability:availabilityActions,settled:()=>{bridge.settled();refresh();}});
   nav.setAttribute('aria-label','メインメニュー');root.append(header,content,month.node,nav);
@@ -138,9 +138,11 @@ window.TokiMobileUI = function (bridge) {
   function availabilityActions(person,range,chosenDate){
     const ctx=bridge.context();ctx.date=chosenDate;
     const {d}=dialog(ctx.board.people[person]+'の可能時間');d.append(el('p',null,A.formatDay(ctx.date,[range])));
+    const source={kind:'availability',person,date:ctx.date,...range};
+    addTimeAdjustment(d,source,range,ctx.fingerprint);
     if(bridge.canEditRow('p:'+person))d.append(mutationButton('削除',async()=>{try{if(await bridge.commit(S.editPerson(ctx.board,person,ctx.date,[range],[]),'可能時間を削除しました',ctx.fingerprint))d.close();}catch(e){showError(d,e.message);}},undefined,'mob-danger'));
     d.append(button('時間をコピー',()=>copy(A.formatDay(ctx.date,[range]),d)));
-    if(bridge.canEditRow('p:'+person))addDuplicateAction(d,{kind:'availability',person,date:ctx.date,...range});
+    if(bridge.canEditRow('p:'+person))addDuplicateAction(d,source);
     d.showModal();
   }
   function renderTable(board,date){
@@ -215,6 +217,22 @@ window.TokiMobileUI = function (bridge) {
   }
   async function reorder(board,make){try{await bridge.commit(make(),'並び順を変更しました',JSON.stringify(board));}catch(e){bridge.notify(e.message);}}
   async function copy(text,parent){try{await navigator.clipboard.writeText(text);bridge.notify('時間をコピーしました');}catch{const area=el('textarea');area.readOnly=true;area.value=text;area.setAttribute('aria-label','コピーする時間');parent.append(el('p','mob-note','コピーできない場合は、次の文字を選択してコピーしてください。'),area);area.focus();area.select();}}
+  function addTimeAdjustment(d,source,range,fingerprint){
+    if(!bridge.canAdjustTime(source))return;
+    let locked=[];
+    const adjustment=window.TokiTimeAdjustment({
+      range,canSave:()=>bridge.canDuplicate(source),
+      async save(to){await bridge.adjustTime(source,to,fingerprint);if(d.open)d.close();},
+      onBusy(saving){
+        d.setAttribute('aria-busy',String(saving));
+        if(saving)locked=[...d.querySelectorAll('button:enabled')].filter(button=>!adjustment.form.contains(button));
+        for(const button of locked)button.disabled=saving;
+      }
+    });
+    timeAdjustment=adjustment;d.append(adjustment.form);
+    d.addEventListener('cancel',event=>{if(d.getAttribute('aria-busy')==='true')event.preventDefault();});
+    d.addEventListener('close',()=>{if(timeAdjustment===adjustment)timeAdjustment=null;},{once:true});
+  }
   function addDuplicateAction(d,source){
     const action=mutationButton('他の日に複製',()=>{
       if(!bridge.canDuplicate(source))return;
@@ -227,13 +245,15 @@ window.TokiMobileUI = function (bridge) {
   }
   function openMeetingActions(id,person){
     const ctx=bridge.context(),m=ctx.board.meetings.find(m=>m.id===id);if(!m)return;const {d}=dialog('MTGの操作');d.append(el('p',null,dayText(m.date)+' '+rangeText(m)),el('p','mob-note',person===null?'対象者：'+m.members.map(p=>ctx.board.people[p]).join('、'):'対象者：'+ctx.board.people[person]));
+    const source={kind:'meeting',id,person};
+    addTimeAdjustment(d,source,m,ctx.fingerprint);
     if(bridge.canManage()){
       if(person===null)d.append(mutationButton('時間・対象者を編集',()=>{d.close();openEditor('g:'+m.group,id,m.date);}));
       d.append(mutationButton('削除（可能時間を復元）',async()=>{try{if(await bridge.commit(S.release(ctx.board,id,person===null?{}:{person}),'MTGを解除しました',ctx.fingerprint))d.close();}catch(e){showError(d,e.message);}},undefined,'mob-danger'));
     }
     if(person===null){
       d.append(button('時間をコピー',()=>copy(A.formatDay(m.date,[m]),d)));
-      if(bridge.canManage())addDuplicateAction(d,{kind:'meeting',id,person});
+      if(bridge.canManage())addDuplicateAction(d,source);
     }
     d.showModal();
   }
@@ -364,7 +384,7 @@ window.TokiMobileUI = function (bridge) {
     const current=draft;
     try{draft.saveError='';const next=draftPlan();const saved=await bridge.commit(next,'時間を保存しました',draft.ctx.fingerprint);if(draft!==current)return;if(saved){draft=null;gesture=null;editor.d.close();}else updatePreview();}catch(e){if(draft!==current)return;draft.saveError=e.message;updatePreview();}
   }
-  function refresh(){if(refreshFrame)return;refreshFrame=requestAnimationFrame(()=>{refreshFrame=0;mode();render();if(editor.d.open){if(!bridge.context().writable){cancelGesture();if(draft)draft.mode='scroll';}updatePreview();}});}
+  function refresh(){if(refreshFrame)return;refreshFrame=requestAnimationFrame(()=>{refreshFrame=0;mode();render();timeAdjustment?.refresh();if(editor.d.open){if(!bridge.context().writable){cancelGesture();if(draft)draft.mode='scroll';}updatePreview();}});}
   document.querySelectorAll('dialog:not(.mob-dialog)').forEach(d=>d.addEventListener('close',()=>{mode();refresh();if(compact)recoverFocus();}));
   const observer=new MutationObserver(refresh);for(const id of ['save-status','connection-status','pwa-status','install-app','update-app'])observer.observe($(id),{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden']});
   const modalObserver=new MutationObserver(()=>document.documentElement.classList.toggle('mob-modal-open',Boolean(document.querySelector('dialog[open]'))));modalObserver.observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});

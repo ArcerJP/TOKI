@@ -156,8 +156,22 @@
     selectDate(date);
     mobile?.jumpToDate(date);
   }
-  const canDuplicate=source=>editable()&&(source.kind==='availability'
-    ?canEditPerson(source.person):source.kind==='meeting'&&source.person===null&&canManage());
+  const canAdjustTime=source=>source.kind==='availability'
+    ?canEditPerson(source.person):source.kind==='meeting'&&source.person===null&&canManage();
+  const canDuplicate=source=>editable()&&canAdjustTime(source);
+  async function adjustMenuTime(source,to,fingerprint){
+    if(!canDuplicate(source))throw Error('この時間帯を編集できません。');
+    if(to.end<=to.start)throw Error('終了時刻は開始時刻より後にしてください。');
+    const current=snapshot();
+    if(pendingBoard||pendingLocalBoard||JSON.stringify(current)!==fingerprint)
+      throw Error('予定表が更新されました。画面を閉じ、最新の予定から操作してください。');
+    const availability=source.kind==='availability';
+    const next=availability
+      ?window.TokiMobileModel.applyMonthEdit(current,{person:source.person,date:source.date,from:source,to})
+      :S.adjustMeeting(current,source.id,to);
+    if(!await commit(next,availability?'可能時間を変更しました':'MTGの時間を変更しました'))
+      throw Error(lastSaveError||'変更を保存できませんでした。');
+  }
   function refreshDuplicatePicker(){
     const saving=Boolean(duplication?.saving);
     $('date-picker').setAttribute('aria-busy',String(saving));
@@ -594,7 +608,7 @@
   document.addEventListener("keydown",event=>{
     if(event.key==="Escape"&&fullscreen&&!dialogOpen()&&!drag&&!rowDrag?.active&&!fullscreenPending){event.preventDefault();exitScheduleFullscreen();}
   },true);
-  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:target=>editable()&&(target.kind==='availability'?canEditPerson(target.person):canManage()),onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),removeAvailability:target=>commit(S.editPerson(snapshot(),target.person,target.date,[target],[]),'可能時間を削除しました'),canDuplicate,openDuplicate:openDuplicatePicker,notify:toast,settled:applyPending});
+  meetingMenu=window.TokiMeetingMenu({root:$("chart-scroll"),resolve:bar=>displayBars.get(bar.dataset.id),board:snapshot,canOpen:()=>ready&&!busy&&!rowDrag?.active&&!dialogOpen(),canDelete:target=>editable()&&(target.kind==='availability'?canEditPerson(target.person):canManage()),onOpen:cancelDrag,release:target=>commit(S.release(snapshot(),target.id,target.person===null?{}:{person:target.person}),target.person===null?'MTGを削除し、対象者全員の可能時間を復元しました':'この人のMTGを削除し、可能時間を復元しました'),removeAvailability:target=>commit(S.editPerson(snapshot(),target.person,target.date,[target],[]),'可能時間を削除しました'),canAdjustTime,adjustTime:adjustMenuTime,canDuplicate,openDuplicate:openDuplicatePicker,notify:toast,settled:applyPending});
   rowDrag=window.TokiRowDrag({scroll:$("chart-scroll"),board:snapshot,canStart:()=>canManage()&&editable()&&!drag&&!dialogOpen(),commit,settled:applyPending,notify:toast,moveBetweenGroups:false});
   window.TokiAvailabilityUI({board:snapshot,selected:()=>selected,excluded,notify:toast,canOpen:()=>ready&&!drag&&!rowDrag?.active});
   window.TokiMeetingExportUI({board:snapshot,selected:()=>selected,notify:toast,canOpen:()=>ready&&!busy&&!drag&&!rowDrag?.active&&!dialogOpen()});
@@ -614,7 +628,7 @@
   mobile=window.TokiMobileUI({
     context:()=>({board:snapshot(),date:selected,ready,busy,writable:editable(),pending:Boolean(pendingBoard||pendingLocalBoard),fingerprint:JSON.stringify(snapshot())}),
     interacting:()=>Boolean(drag||rowDrag?.active),
-    selectDate,today,openDatePicker,openDuplicatePicker,canDuplicate,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
+    selectDate,today,openDatePicker,openDuplicatePicker,canDuplicate,canAdjustTime,adjustTime:adjustMenuTime,excluded,toggleMember,openRoster,openMeeting,exitFullscreen:exitScheduleFullscreen,
     scoped:()=>Boolean(access),canManage,canEditRow,canAddPlace,canManagePlaces,ownPerson,linkedPerson,isPlace,
     visibleGroup:id=>groupView.visible(id),openGroupView:()=>groupView.open(),refreshGroupView:()=>groupView.refresh(),
     commit:async(next,message,fingerprint)=>{

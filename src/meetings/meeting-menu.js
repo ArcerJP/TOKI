@@ -1,8 +1,8 @@
 "use strict";
-window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,removeAvailability,canDuplicate,openDuplicate,notify,settled})=>{
+window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,removeAvailability,canAdjustTime,adjustTime,canDuplicate,openDuplicate,notify,settled})=>{
   const $=id=>document.getElementById(id),dialog=$('meeting-menu');
   const selector='.event.meeting, .event.availability';
-  let press=null,target=null,suppressClick=false,resetClick;
+  let press=null,target=null,adjustment=null,suppressClick=false,resetClick;
   function cancel(){if(press)clearTimeout(press.timer);press=null;}
   function finish(event){
     if(!press||event.pointerId!==press.pointer)return;
@@ -27,6 +27,17 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
     $('copy-meeting-time').hidden=!availability&&person!==null;
     $('duplicate-time').hidden=!availability&&person!==null;
     $('meeting-copy-fallback').hidden=true;$('meeting-menu-error').textContent='';
+    dialog.setAttribute('aria-busy','false');
+    adjustment=null;$('meeting-time-adjustment').replaceChildren();
+    if(canAdjustTime(target)){
+      const source=target,fingerprint=JSON.stringify(current);
+      adjustment=window.TokiTimeAdjustment({
+        range,canSave:()=>target===source&&canDuplicate(source),
+        async save(to){await adjustTime(source,to,fingerprint);if(target===source&&dialog.open)dialog.close();},
+        onBusy(saving){if(target===source){dialog.setAttribute('aria-busy',String(saving));refresh();}}
+      });
+      $('meeting-time-adjustment').replaceChildren(adjustment.form);
+    }
     refresh();dialog.showModal();
     const rect=dialog.getBoundingClientRect();
     dialog.style.left=Math.max(8,Math.min(x+8,window.innerWidth-rect.width-8))+'px';
@@ -64,7 +75,11 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
   document.addEventListener('keydown',event=>{if(event.key==='Escape'){cancel();suppressClick=false;}},true);
   $('close-meeting-menu').onclick=()=>{if(dialog.getAttribute('aria-busy')!=='true')dialog.close();};
   dialog.addEventListener('cancel',event=>{if(dialog.getAttribute('aria-busy')==='true')event.preventDefault();});
-  dialog.addEventListener('close',()=>{target=null;cancel();suppressClick=false;settled();});
+  dialog.addEventListener('close',()=>{
+    if(dialog.open)return;
+    dialog.setAttribute('aria-busy','false');
+    target=null;adjustment=null;$('meeting-time-adjustment').replaceChildren();cancel();suppressClick=false;settled();
+  });
   $('delete-meeting').onclick=async()=>{
     if(!target||!canDelete(target))return;
     dialog.setAttribute('aria-busy','true');refresh();
@@ -86,6 +101,13 @@ window.TokiMeetingMenu=({root,resolve,board,canOpen,canDelete,onOpen,release,rem
     dialog.close();
     openDuplicate(source);
   };
-  function refresh(){const saving=dialog.getAttribute('aria-busy')==='true';$('delete-meeting').disabled=saving||!target||!canDelete(target);$('copy-meeting-time').disabled=saving;$('duplicate-time').disabled=saving||!target||!canDuplicate(target);$('close-meeting-menu').disabled=saving;}
+  function refresh(){
+    const saving=dialog.getAttribute('aria-busy')==='true';
+    $('delete-meeting').disabled=saving||!target||!canDelete(target);
+    $('copy-meeting-time').disabled=saving;
+    $('duplicate-time').disabled=saving||!target||!canDuplicate(target);
+    $('close-meeting-menu').disabled=saving;
+    adjustment?.refresh();
+  }
   return {get pressing(){return Boolean(press);},refresh};
 };

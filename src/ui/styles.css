@@ -50,5 +50,13 @@ html:not([data-toki-top-level]){display:none!important}
 #duplicate-source,#duplicate-result,#duplicate-warning { font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
 #duplicate-count { flex:1; font-size:13px; }
 #duplicate-warning { color:#853c17; background:#fff4da; padding:8px 10px; border-radius:6px; white-space:pre-line; }
+.time-adjustment { display:grid; gap:6px; margin:12px 0; }
+.time-adjustment fieldset { min-width:0; margin:0; padding:8px; border:1px solid #d7e0dd; border-radius:8px; }
+.time-adjustment legend { padding:0 5px; font-size:13px; font-weight:650; }
+.time-adjustment-row { display:grid; grid-template-columns:auto repeat(2,minmax(0,1fr)); align-items:center; gap:6px; font-size:13px; }
+.time-adjustment-row + .time-adjustment-row { margin-top:6px; }
+.time-adjustment-row select { min-width:0; padding:7px 5px; }
+.time-adjustment-row select[aria-invalid="true"] { border-color:#ad413c; }
+.time-adjustment-error { margin:0; line-height:1.5; }
 .date-picker-grid button[data-duplicate-warning] { position:relative; border-color:#a94e19; color:#73310e; background:#fff4da; }
 .date-picker-grid button[data-duplicate-warning]::after { content:"⚠"; font-size:12px; position:absolute; top:0; right:3px; }

@@ -21,6 +21,7 @@ const sources = Object.freeze({
   'availability.js': 'src/core/availability.js',
   'schedule.js': 'src/core/schedule.js',
   'availability-ui.js': 'src/ui/availability-ui.js',
+  'time-adjustment.js': 'src/ui/time-adjustment.js',
   'meeting-menu.js': 'src/meetings/meeting-menu.js',
   'meeting-export-ui.js': 'src/meetings/meeting-export-ui.js',
   'calendar-import.js': 'src/calendar/calendar-import.js',

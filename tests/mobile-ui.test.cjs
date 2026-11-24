@@ -5,10 +5,11 @@ const S=require('../src/core/schedule.js');
 const date='2026-10-05';
 const seed=()=>S.reserve({schemaVersion:4,people:['A','B','C','D'],groups:[{id:'a',name:'局A',members:[0,1]},{id:'b',name:'局B',members:[1,2]}],events:[0,1,2].map(person=>({id:'e'+person,person,date,start:540,end:1080})),meetings:[]},'a',date,[{start:780,end:840}]);
 const flush=()=>new Promise(resolve=>setTimeout(resolve,40));
-async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false,guest=false,launchDate=date,blockedDates=[],entry=false,legacyFolded}={}){
+async function environment(t,{width=390,coarse=false,shared=false,preselect=true,groupId='a',scoped=false,guest=false,launchDate=date,blockedDates=[],entry=false,legacyFolded,preciseEnd}={}){
   const errors=[],virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',e=>errors.push(e));
   const dom=new JSDOM(fs.readFileSync(sourcePath('index.html'),'utf8'),{url:'https://example.test/TOKI/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole});
   const w=dom.window,d=w.document,media=[];let board=seed(),version=1,hooks,online=true,saves=0,failSave=false;
+  if(preciseEnd)board=S.editPerson(board,0,date,[{start:540,end:780}],[{start:540,end:preciseEnd}]);
   w.Date=class extends w.Date {constructor(...args){super(...(args.length?args:[launchDate+'T12:00:00']));}};
   const access=scoped?{role:guest?'guest':'member',personId:'00000000-0000-4000-8000-000000000001'}:undefined;
   if(scoped)board.rows=board.people.map((_,i)=>({id:'00000000-0000-4000-8000-00000000000'+(i+1),kind:i===1?'place':'person'}));
@@ -30,7 +31,7 @@ async function environment(t,{width=390,coarse=false,shared=false,preselect=true
     if(next.events.some(event=>event.person===0&&blockedDates.includes(event.date)))throw Object.assign(Error('登録済みのMTGと重なります。'),{code:'SCHEDULE_BUSY'});
     saves++;board=structuredClone(next);return {version:++version,payload:board,access};
   },refresh:async()=>{}};
-  for(const name of ['model','availability','schedule','availability-ui','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-month','mobile-ui','group-view','company-ui','app'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
+  for(const name of ['model','availability','schedule','availability-ui','time-adjustment','meeting-menu','meeting-export-ui','row-drag','calendar-import','google-calendar','google-import-ui','mobile-model','mobile-month','mobile-ui','group-view','company-ui','app'])w.eval(fs.readFileSync(sourcePath(name+'.js'),'utf8'));
   await flush();await flush();
   if(!entry)w.document.querySelector('.mob-nav [aria-label="予定"]')?.click();
   t.after(()=>{dom.window.close();assert.deepEqual(errors.map(e=>e.message),[]);});
@@ -95,6 +96,48 @@ function rightClickBand(e,selector){
   bar.dispatchEvent(new e.w.MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2}));
   assert.equal(e.$('meeting-menu').open,true);
 }
+function changeTime(e,label,value,eventType='change'){
+  const input=e.d.querySelector('dialog[open] select[aria-label="'+label+'"]');
+  assert.ok(input,label);input.value=String(value);
+  input.dispatchEvent(new e.w.Event(eventType,{bubbles:true}));
+  return input;
+}
+const timeForm=e=>e.d.querySelector('dialog[open] .time-adjustment');
+const saveTime=e=>timeForm(e).onsubmit({preventDefault(){}});
+test('desktop time menu rejects inverted and zero-length times immediately and adjusts the original MTG participants',async t=>{
+  const e=await environment(t,{width:1440,shared:true});
+  rightClickBand(e,'[data-name="局A"] .event.meeting');
+  const form=timeForm(e),warning=form.querySelector('[role="alert"]');
+  changeTime(e,'開始の時',15,'input');
+  assert.equal(warning.hidden,false);assert.match(warning.textContent,/終了時刻は開始時刻より後/);
+  assert.equal(e.button('時間を保存').disabled,true);
+  changeTime(e,'開始の時',14);
+  assert.equal(e.button('時間を保存').disabled,true);
+  await saveTime(e);assert.equal(e.saves,0);
+  changeTime(e,'開始の時',8);await saveTime(e);
+  assert.match(warning.textContent,/可能時間がありません/);assert.equal(e.saves,0);
+  changeTime(e,'開始の時',12);changeTime(e,'開始の分',30);changeTime(e,'終了の分',30);
+  assert.equal(warning.hidden,true);assert.equal(e.button('時間を保存').disabled,false);
+  await saveTime(e);
+  assert.equal(e.saves,1);assert.equal(e.$('meeting-menu').open,false);
+  assert.deepEqual(e.current().meetings.map(({start,end,members})=>({start,end,members})),[{start:750,end:870,members:[0,1]}]);
+});
+test('mobile time menu preserves a legacy minute and allows only 24:00 at the end of day',async t=>{
+  const e=await environment(t,{shared:true,preciseEnd:770});
+  await e.click('A 09:00～12:50の操作');
+  const end=timeForm(e).querySelector('[aria-label="終了の分"]');
+  assert.equal(end.value,'50');
+  assert.deepEqual([...end.options].filter(option=>!option.disabled).map(option=>option.value),['0','30']);
+  changeTime(e,'開始の分',30);await saveTime(e);await flush();
+  assert.deepEqual(S.personRanges(e.current(),0,date),[{start:570,end:770},{start:840,end:1080}]);
+  await e.click('A 14:00～18:00の操作');
+  const minutes=changeTime(e,'終了の分',30);
+  changeTime(e,'終了の時',24);
+  assert.equal(minutes.value,'0');assert.equal(minutes.querySelector('option[value="30"]').disabled,true);
+  await saveTime(e);
+  assert.deepEqual(S.personRanges(e.current(),0,date),[{start:570,end:770},{start:840,end:1440}]);
+  assert.equal(e.saves,2);
+});
 test('desktop right-click duplicates availability across months and one undo reverts all selected dates',async t=>{
   const e=await environment(t,{width:1440,shared:true}),before=e.current();
   rightClickBand(e,'[data-name="A"] .event.availability');
@@ -377,6 +420,16 @@ function monthGesture(e){
   return {viewport,track,touch,point};
 }
 const holdMonth=()=>new Promise(resolve=>setTimeout(resolve,480));
+test('a stationary long press adds one half hour on an empty monthly row and leaves an existing band alone',async t=>{
+  const e=await environment(t,{entry:true,shared:true}),g=monthGesture(e),day='2026-10-06';
+  const down=g.point(day,545),track=g.track(day);
+  g.touch(track,'touchstart',[down]);await holdMonth();assert.equal(e.saves,0);
+  g.touch(track,'touchend',[],[down]);await flush();
+  assert.deepEqual(S.personRanges(e.current(),0,day),[{start:540,end:570}]);
+  const band=g.track(day).querySelector('.mob-month-band'),atBand=g.point(day,555);
+  g.touch(band,'touchstart',[atBand]);await holdMonth();g.touch(band,'touchend',[],[atBand]);await flush();
+  assert.equal(e.saves,1);assert.equal(e.d.querySelector('dialog[open]'),null);
+});
 test('monthly touch gestures separate scrolling, tapping, range creation, cross-date moves and resizing',async t=>{
   const e=await environment(t,{entry:true,shared:true}),g=monthGesture(e);
   const day6='2026-10-06',day7='2026-10-07',day8='2026-10-08';
